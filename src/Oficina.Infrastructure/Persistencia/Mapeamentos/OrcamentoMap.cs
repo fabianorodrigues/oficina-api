@@ -26,6 +26,7 @@ public class OrcamentoMap : IEntityTypeConfiguration<Orcamento>
             items.ToTable("OrcamentoItensServico");
             items.WithOwner().HasForeignKey("OrcamentoId");
             items.HasKey(x => x.Id);
+            items.Property(x => x.Id).ValueGeneratedNever();
             items.Property(x => x.ServicoId).IsRequired();
             items.Property(x => x.ValorMaoDeObra).HasColumnType("decimal(18,2)").IsRequired();
         });
@@ -35,6 +36,7 @@ public class OrcamentoMap : IEntityTypeConfiguration<Orcamento>
             items.ToTable("OrcamentoItensMaterial");
             items.WithOwner().HasForeignKey("OrcamentoId");
             items.HasKey(x => x.Id);
+            items.Property(x => x.Id).ValueGeneratedNever();
             items.Property(x => x.Tipo).IsRequired();
             items.Property(x => x.MaterialId).IsRequired();
             items.Property(x => x.Quantidade).IsRequired();

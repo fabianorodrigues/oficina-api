@@ -403,7 +403,6 @@ namespace Oficina.Infrastructure.Migrations
                     b.OwnsMany("Oficina.Domain.CatalogoEstoque.ServicoInsumoRequerido", "Insumos", b1 =>
                         {
                             b1.Property<Guid>("Id")
-                                .ValueGeneratedOnAdd()
                                 .HasColumnType("uniqueidentifier");
 
                             b1.Property<Guid>("InsumoId")
@@ -428,7 +427,6 @@ namespace Oficina.Infrastructure.Migrations
                     b.OwnsMany("Oficina.Domain.CatalogoEstoque.ServicoPecaRequerida", "Pecas", b1 =>
                         {
                             b1.Property<Guid>("Id")
-                                .ValueGeneratedOnAdd()
                                 .HasColumnType("uniqueidentifier");
 
                             b1.Property<Guid>("PecaId")
@@ -460,7 +458,6 @@ namespace Oficina.Infrastructure.Migrations
                     b.OwnsMany("Oficina.Domain.Oficina.OrcamentoItemMaterial", "ItensMaterial", b1 =>
                         {
                             b1.Property<Guid>("Id")
-                                .ValueGeneratedOnAdd()
                                 .HasColumnType("uniqueidentifier");
 
                             b1.Property<Guid>("MaterialId")
@@ -491,7 +488,6 @@ namespace Oficina.Infrastructure.Migrations
                     b.OwnsMany("Oficina.Domain.Oficina.OrcamentoItemServico", "ItensServico", b1 =>
                         {
                             b1.Property<Guid>("Id")
-                                .ValueGeneratedOnAdd()
                                 .HasColumnType("uniqueidentifier");
 
                             b1.Property<Guid>("OrcamentoId")

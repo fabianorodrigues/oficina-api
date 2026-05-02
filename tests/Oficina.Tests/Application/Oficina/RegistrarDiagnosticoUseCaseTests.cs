@@ -62,4 +62,30 @@ public class RegistrarDiagnosticoUseCaseTests
         repoOficina.Verify(x => x.Salvar(It.IsAny<CancellationToken>()), Times.Exactly(2));
         notificador.Verify(x => x.NotificarOrcamentoCriado(resposta.OrcamentoId, os.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task RegistrarDiagnostico_DeveRetornarConflito_QuandoOsJaPossuiOrcamento()
+    {
+        var repoOficina = new Mock<IOficinaRepository>();
+        var repoCatalogo = new Mock<ICatalogoEstoqueRepository>();
+        var notificador = new Mock<INotificadorCliente>();
+
+        var os = OrdemServico.CriarCorretiva(Guid.NewGuid());
+        var orcamentoExistente = new Orcamento(os.Id, 250);
+
+        repoOficina.Setup(x => x.ObterOrdemServico(os.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(os);
+        repoOficina.Setup(x => x.ObterOrcamentoPorOs(os.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(orcamentoExistente);
+
+        var useCase = new RegistrarDiagnosticoUseCase(repoOficina.Object, repoCatalogo.Object, notificador.Object);
+
+        var ex = await Assert.ThrowsAsync<OficinaException>(() =>
+            useCase.Executar(os.Id, "Falha no freio", [Guid.NewGuid()], CancellationToken.None));
+
+        Assert.Equal(409, ex.StatusHttp);
+        repoOficina.Verify(x => x.AdicionarOrcamento(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>()), Times.Never);
+        notificador.Verify(x => x.NotificarOrcamentoCriado(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+        repoOficina.Verify(x => x.Salvar(It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

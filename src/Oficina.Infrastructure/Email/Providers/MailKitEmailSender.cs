@@ -22,8 +22,8 @@ public class MailKitEmailSender : IEmailSender
     public async Task Enviar(EmailMessage message, CancellationToken ct)
     {
         var email = new MimeMessage();
-        email.From.Add(MailboxAddress.Parse(_settings.From));
-        email.To.Add(MailboxAddress.Parse(message.To));
+        email.From.Add(ValidarEndereco(_settings.From, "remetente"));
+        email.To.Add(ValidarEndereco(message.To, "destinatario"));
         email.Subject = message.Subject;
         email.Body = new BodyBuilder { HtmlBody = message.HtmlBody }.ToMessageBody();
 
@@ -34,5 +34,14 @@ public class MailKitEmailSender : IEmailSender
         await client.DisconnectAsync(true, ct);
 
         _logger.LogInformation("E-mail enviado para {EmailTo} via SMTP {SmtpHost}:{SmtpPort}.", message.To, _settings.SmtpHost, _settings.SmtpPort);
+    }
+
+    private MailboxAddress ValidarEndereco(string endereco, string contexto)
+    {
+        if (MailboxAddress.TryParse(endereco, out var mailbox))
+            return mailbox;
+
+        _logger.LogWarning("Endereco de e-mail invalido para {Contexto}: {Email}.", contexto, endereco);
+        throw new ArgumentException($"Endereco de e-mail invalido para {contexto}: {endereco}", nameof(endereco));
     }
 }

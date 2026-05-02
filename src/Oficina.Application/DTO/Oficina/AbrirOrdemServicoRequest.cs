@@ -2,6 +2,7 @@ namespace Oficina.Application.DTO.Oficina;
 
 public sealed class AbrirOrdemServicoRequest
 {
+    public string? TipoManutencao { get; init; }
     public ClienteAberturaRequest Cliente { get; init; } = new();
     public VeiculoAberturaRequest Veiculo { get; init; } = new();
     public ItensAberturaRequest Itens { get; init; } = new();

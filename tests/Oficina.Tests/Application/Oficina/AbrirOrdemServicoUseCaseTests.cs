@@ -27,6 +27,60 @@ public class AbrirOrdemServicoUseCaseTests
         Assert.NotEqual(Guid.Empty, result.Id);
         Assert.Equal(StatusOrdemServico.Recebida.ToString(), result.Status);
         Assert.Equal(100m, result.Total);
+        fixture.Oficina.Verify(x => x.AdicionarOrcamento(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Abrir_SemTipoESemServicos_DeveCriarOsRecebidaSemOrcamento()
+    {
+        var fixture = CriarFixture();
+        var req = CriarRequestSemServicos();
+
+        var result = await fixture.UseCase.Executar(req, CancellationToken.None);
+
+        Assert.NotEqual(Guid.Empty, result.Id);
+        Assert.Equal(StatusOrdemServico.Recebida.ToString(), result.Status);
+        Assert.Equal(0m, result.Total);
+        fixture.Oficina.Verify(x => x.AdicionarOrdemServico(It.Is<OrdemServico>(os =>
+            os.TipoManutencao == TipoManutencao.NaoClassificada &&
+            os.Status == StatusOrdemServico.Recebida &&
+            os.OrcamentoId == null), It.IsAny<CancellationToken>()), Times.Once);
+        fixture.Oficina.Verify(x => x.AdicionarOrcamento(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Abrir_ComTipoCorretiva_DeveCriarOsCorretivaSemOrcamento()
+    {
+        var fixture = CriarFixture();
+        var req = CriarRequestSemServicos("Corretiva");
+
+        var result = await fixture.UseCase.Executar(req, CancellationToken.None);
+
+        Assert.NotEqual(Guid.Empty, result.Id);
+        Assert.Equal(StatusOrdemServico.EmDiagnostico.ToString(), result.Status);
+        Assert.Equal(0m, result.Total);
+        fixture.Oficina.Verify(x => x.AdicionarOrdemServico(It.Is<OrdemServico>(os =>
+            os.TipoManutencao == TipoManutencao.Corretiva &&
+            os.Status == StatusOrdemServico.EmDiagnostico &&
+            os.OrcamentoId == null), It.IsAny<CancellationToken>()), Times.Once);
+        fixture.Oficina.Verify(x => x.AdicionarOrcamento(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Abrir_ComTipoPreventivaEServicos_DeveGerarOrcamento()
+    {
+        var fixture = CriarFixture();
+        var servico = new Servico(175);
+
+        fixture.Catalogo.Setup(x => x.ObterServico(servico.Id, It.IsAny<CancellationToken>())).ReturnsAsync(servico);
+
+        var req = CriarRequest(servico.Id, tipoManutencao: "Preventiva");
+        var result = await fixture.UseCase.Executar(req, CancellationToken.None);
+
+        Assert.NotEqual(Guid.Empty, result.Id);
+        Assert.Equal(StatusOrdemServico.AguardandoAprovacao.ToString(), result.Status);
+        Assert.Equal(175m, result.Total);
+        fixture.Oficina.Verify(x => x.AdicionarOrcamento(It.IsAny<Orcamento>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -89,10 +143,12 @@ public class AbrirOrdemServicoUseCaseTests
 
     private static AbrirOrdemServicoRequest CriarRequest(
         Guid servicoId,
+        string? tipoManutencao = null,
         IReadOnlyList<PecaAberturaRequest>? pecas = null,
         IReadOnlyList<InsumoAberturaRequest>? insumos = null)
         => new()
         {
+            TipoManutencao = tipoManutencao,
             Cliente = new ClienteAberturaRequest
             {
                 Nome = "João da Silva",
@@ -117,6 +173,31 @@ public class AbrirOrdemServicoUseCaseTests
                 Pecas = pecas ?? [],
                 Insumos = insumos ?? []
             }
+        };
+
+    private static AbrirOrdemServicoRequest CriarRequestSemServicos(string? tipoManutencao = null)
+        => new()
+        {
+            TipoManutencao = tipoManutencao,
+            Cliente = new ClienteAberturaRequest
+            {
+                Nome = "Joao da Silva",
+                Documento = "12345678909",
+                Email = "joao@email.com",
+                Telefone = "11999999999"
+            },
+            Veiculo = new VeiculoAberturaRequest
+            {
+                Placa = "ABC1234",
+                Renavam = "12345678901",
+                Modelo = new ModeloAberturaRequest
+                {
+                    Descricao = "Corolla",
+                    Marca = "Toyota",
+                    Ano = 2020
+                }
+            },
+            Itens = new ItensAberturaRequest()
         };
 
     private static Fixture CriarFixture()

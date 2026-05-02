@@ -11,9 +11,13 @@ public class AtualizarClienteRequestValidator : AbstractValidator<AtualizarClien
             .NotEmpty()
             .Must(doc =>
             {
-                var d = new string((doc ?? "").Where(char.IsDigit).ToArray());
+                var d = new string((doc ?? string.Empty).Where(char.IsDigit).ToArray());
                 return d.Length is 11 or 14;
             })
-            .WithMessage("CPF/CNPJ inválido.");
+            .WithMessage("CPF/CNPJ invalido.");
+
+        RuleFor(x => x.Nome).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Email).NotEmpty().Must(EmailValidation.EnderecoValido).MaximumLength(150).WithMessage("Email invalido.");
+        RuleFor(x => x.Telefone).NotEmpty().MaximumLength(20);
     }
 }

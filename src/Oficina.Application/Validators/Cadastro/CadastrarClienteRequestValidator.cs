@@ -16,7 +16,7 @@ public class CadastrarClienteRequestValidator : AbstractValidator<CadastrarClien
             })
             .WithMessage("CPF/CNPJ inválido.");
         RuleFor(x => x.Nome).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(150);
+        RuleFor(x => x.Email).NotEmpty().Must(EmailValidation.EnderecoValido).MaximumLength(150).WithMessage("Email invalido.");
         RuleFor(x => x.Telefone).NotEmpty().MaximumLength(20);
 
     }
