@@ -1585,7 +1585,7 @@
             "name": "05 - Fluxo OS Corretiva",
             "item": [
                 {
-                    "name": "01 - Abrir OS Completa",
+                    "name": "01 - Abrir OS Simples",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -1602,7 +1602,7 @@
                         ],
                         "url": "{{baseUrl}}/api/ordens-servico",
                         "body": {
-                            "raw": "{\"cliente\":{\"nome\":\"Joao {{timestamp}}\",\"documento\":\"{{clienteCpf}}\",\"email\":\"{{clienteEmail}}\",\"telefone\":\"11999999999\"},\"veiculo\":{\"placa\":\"{{placa}}\",\"renavam\":\"{{renavam}}\",\"modelo\":{\"descricao\":\"Corolla XEi\",\"marca\":\"Toyota\",\"ano\":2020}},\"itens\":{\"servicos\":[{\"servicoId\":\"{{servicoId}}\"}],\"pecas\":[{\"pecaId\":\"{{pecaId}}\",\"quantidade\":1}],\"insumos\":[{\"insumoId\":\"{{insumoId}}\",\"quantidade\":1}]}}",
+                            "raw": "{\"cliente\":{\"nome\":\"Joao {{timestamp}}\",\"documento\":\"{{clienteCpf}}\",\"email\":\"{{clienteEmail}}\",\"telefone\":\"11999999999\"},\"veiculo\":{\"placa\":\"{{placa}}\",\"renavam\":\"{{renavam}}\",\"modelo\":{\"descricao\":\"Corolla XEi\",\"marca\":\"Toyota\",\"ano\":2020}},\"itens\":{\"servicos\":[],\"pecas\":[],\"insumos\":[]}}",
                             "options": {
                                 "raw": {
                                     "language": "json"

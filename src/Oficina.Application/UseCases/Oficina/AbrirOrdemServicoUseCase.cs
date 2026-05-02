@@ -5,6 +5,7 @@ using Oficina.Application.Shared;
 using Oficina.Domain.Cadastro;
 using Oficina.Domain.Cadastro.ValueObjects;
 using Oficina.Domain.Oficina;
+using Oficina.Domain.Oficina.Enums;
 
 namespace Oficina.Application.UseCases.Oficina;
 
@@ -29,26 +30,28 @@ public class AbrirOrdemServicoUseCase
     {
         var cliente = await ObterOuCriarCliente(req.Cliente, ct);
         var veiculo = await ObterOuCriarVeiculo(cliente.Id, req.Veiculo, ct);
-
         var servicoIds = req.Itens.Servicos.Select(x => x.ServicoId).Where(x => x != Guid.Empty).Distinct().ToList();
-        if (servicoIds.Count == 0)
-            throw new OficinaException("A abertura completa exige ao menos 1 serviço.", 400);
+        var tipo = ObterTipoManutencao(req.TipoManutencao);
+        var os = CriarOrdemServico(veiculo.Id, tipo, servicoIds);
+        var total = 0m;
 
-        var os = OrdemServico.CriarRecebida(veiculo.Id);
+        if (DeveGerarOrcamento(tipo, servicoIds))
+        {
+            var (valorTotal, itensServico, itensMaterial) = await CalcularTotal(req, ct);
+            total = valorTotal;
 
-        var (total, itensServico, itensMaterial) = await CalcularTotal(req, ct);
+            var orcamento = new Orcamento(os.Id, total);
+            orcamento.DefinirTokenAcaoExterna(
+               TokenAcaoExternaGenerator.Gerar(),
+               DateTimeOffset.UtcNow.Add(PrazoExpiracaoAcaoExterna));
+            orcamento.DefinirItensServico(itensServico);
+            orcamento.DefinirItensMaterial(itensMaterial);
 
-        var orcamento = new Orcamento(os.Id, total);
-        orcamento.DefinirTokenAcaoExterna(
-           TokenAcaoExternaGenerator.Gerar(),
-           DateTimeOffset.UtcNow.Add(PrazoExpiracaoAcaoExterna));
-        orcamento.DefinirItensServico(itensServico);
-        orcamento.DefinirItensMaterial(itensMaterial);
-
-        os.VincularOrcamento(orcamento.Id, atualizarStatusParaAguardando: false);
+            os.VincularOrcamento(orcamento.Id, atualizarStatusParaAguardando: false);
+            await _oficina.AdicionarOrcamento(orcamento, ct);
+        }
 
         await _oficina.AdicionarOrdemServico(os, ct);
-        await _oficina.AdicionarOrcamento(orcamento, ct);
         await _oficina.Salvar(ct);
 
         return new AbrirOrdemServicoResponse
@@ -58,6 +61,29 @@ public class AbrirOrdemServicoUseCase
             Total = total
         };
     }
+
+    private static TipoManutencao ObterTipoManutencao(string? tipoManutencao)
+    {
+        if (string.IsNullOrWhiteSpace(tipoManutencao))
+            return TipoManutencao.NaoClassificada;
+
+        if (Enum.TryParse<TipoManutencao>(tipoManutencao, true, out var tipo) &&
+            tipo is TipoManutencao.Preventiva or TipoManutencao.Corretiva)
+            return tipo;
+
+        throw new OficinaException("Tipo de manutencao invalido.", 400);
+    }
+
+    private static OrdemServico CriarOrdemServico(Guid veiculoId, TipoManutencao tipo, IReadOnlyList<Guid> servicoIds)
+        => tipo switch
+        {
+            TipoManutencao.Corretiva => OrdemServico.CriarCorretiva(veiculoId),
+            TipoManutencao.Preventiva => OrdemServico.CriarPreventiva(veiculoId, servicoIds),
+            _ => OrdemServico.CriarRecebida(veiculoId)
+        };
+
+    private static bool DeveGerarOrcamento(TipoManutencao tipo, IReadOnlyList<Guid> servicoIds)
+        => tipo == TipoManutencao.Preventiva || (tipo == TipoManutencao.NaoClassificada && servicoIds.Count > 0);
 
     private async Task<Cliente> ObterOuCriarCliente(ClienteAberturaRequest req, CancellationToken ct)
     {
@@ -103,7 +129,7 @@ public class AbrirOrdemServicoUseCase
         foreach (var item in req.Itens.Servicos)
         {
             var servico = await _catalogo.ObterServico(item.ServicoId, ct)
-                         ?? throw new OficinaException($"Serviço não encontrado: {item.ServicoId}", 404);
+                         ?? throw new OficinaException($"Servico nao encontrado: {item.ServicoId}", 404);
 
             itensServico.Add(new OrcamentoItemServico(servico.Id, servico.MaoDeObra));
             total += servico.MaoDeObra;
@@ -112,12 +138,12 @@ public class AbrirOrdemServicoUseCase
         foreach (var item in req.Itens.Pecas)
         {
             if (item.Quantidade <= 0)
-                throw new OficinaException("Quantidade de peça deve ser maior que zero.", 400);
+                throw new OficinaException("Quantidade de peca deve ser maior que zero.", 400);
 
             var peca = await _catalogo.ObterPeca(item.PecaId, ct)
-                       ?? throw new OficinaException($"Peça não encontrada: {item.PecaId}", 404);
+                       ?? throw new OficinaException($"Peca nao encontrada: {item.PecaId}", 404);
 
-            itensMaterial.Add(new OrcamentoItemMaterial(Domain.Oficina.Enums.TipoMaterial.Peca, peca.Id, item.Quantidade, peca.PrecoUnitario));
+            itensMaterial.Add(new OrcamentoItemMaterial(TipoMaterial.Peca, peca.Id, item.Quantidade, peca.PrecoUnitario));
             total += item.Quantidade * peca.PrecoUnitario;
         }
 
@@ -127,9 +153,9 @@ public class AbrirOrdemServicoUseCase
                 throw new OficinaException("Quantidade de insumo deve ser maior que zero.", 400);
 
             var insumo = await _catalogo.ObterInsumo(item.InsumoId, ct)
-                         ?? throw new OficinaException($"Insumo não encontrado: {item.InsumoId}", 404);
+                         ?? throw new OficinaException($"Insumo nao encontrado: {item.InsumoId}", 404);
 
-            itensMaterial.Add(new OrcamentoItemMaterial(Domain.Oficina.Enums.TipoMaterial.Insumo, insumo.Id, item.Quantidade, insumo.PrecoUnitario));
+            itensMaterial.Add(new OrcamentoItemMaterial(TipoMaterial.Insumo, insumo.Id, item.Quantidade, insumo.PrecoUnitario));
             total += item.Quantidade * insumo.PrecoUnitario;
         }
 

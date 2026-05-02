@@ -8,9 +8,24 @@ public class AbrirOrdemServicoRequestValidator : AbstractValidator<AbrirOrdemSer
 {
     public AbrirOrdemServicoRequestValidator()
     {
+        RuleFor(x => x.TipoManutencao)
+            .Must(tipo => string.IsNullOrWhiteSpace(tipo) ||
+                          string.Equals(tipo, "Preventiva", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(tipo, "Corretiva", StringComparison.OrdinalIgnoreCase))
+            .WithMessage("Tipo de manutencao invalido.");
+
         RuleFor(x => x.Cliente).NotNull().SetValidator(new ClienteAberturaRequestValidator());
         RuleFor(x => x.Veiculo).NotNull().SetValidator(new VeiculoAberturaRequestValidator());
         RuleFor(x => x.Itens).NotNull().SetValidator(new ItensAberturaRequestValidator());
+
+        RuleFor(x => x.Itens.Servicos)
+            .Must(x => x.Count > 0)
+            .When(x => string.Equals(x.TipoManutencao, "Preventiva", StringComparison.OrdinalIgnoreCase))
+            .WithMessage("Abertura preventiva exige ao menos 1 servico.");
+
+        RuleFor(x => x)
+            .Must(x => x.Itens.Servicos.Count > 0 || (x.Itens.Pecas.Count == 0 && x.Itens.Insumos.Count == 0))
+            .WithMessage("Pecas e insumos so podem ser informados quando houver servicos.");
     }
 }
 
