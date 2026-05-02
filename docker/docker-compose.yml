@@ -1,0 +1,91 @@
+name: oficina-api
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: oficina-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Oficina_dev_2026!}
+    ports:
+      - "127.0.0.1:${SQLSERVER_PORT:-1433}:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    networks:
+      - oficina-network
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${MSSQL_SA_PASSWORD:-Oficina_dev_2026!}' -Q 'SELECT 1' -C || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  smtp4dev:
+    image: rnwood/smtp4dev:v3
+    container_name: oficina-smtp4dev
+    restart: unless-stopped
+    environment:
+      ServerOptions__Urls: "http://*:80"
+      ServerOptions__HostName: "smtp4dev"
+    ports:
+      - "127.0.0.1:${SMTP4DEV_WEB_PORT:-5000}:80"
+      - "127.0.0.1:${SMTP4DEV_SMTP_PORT:-25}:25"
+    volumes:
+      - smtp4dev-data:/smtp4dev
+    networks:
+      - oficina-network
+
+  api:
+    image: "${API_IMAGE_REPOSITORY:-oficina-api}:${API_IMAGE_TAG:-local}"
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: oficina-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: "http://+:8080"
+      RUN_MIGRATION: ${RUN_MIGRATION:-false}
+      ConnectionStrings__SqlServer: "Server=sqlserver,1433;Database=${MSSQL_DATABASE:-OficinaDb};User Id=sa;Password=${MSSQL_SA_PASSWORD:-Oficina_dev_2026!};TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET:-oficina-local-development-secret-2026}
+      Jwt__Key: ${JWT_SECRET:-oficina-local-development-secret-2026}
+      Jwt__Issuer: ${JWT_ISSUER:-Oficina.Api}
+      Jwt__Audience: ${JWT_AUDIENCE:-Oficina.Api}
+      Jwt__ExpirationMinutes: ${JWT_EXPIRATION_MINUTES:-120}
+      Jwt__ExpMinutes: ${JWT_EXPIRATION_MINUTES:-120}
+      EmailSettings__SmtpHost: "smtp4dev"
+      EmailSettings__SmtpPort: "25"
+      EmailSettings__EnableSsl: "false"
+      EmailSettings__From: ${EMAIL_FROM:-no-reply@oficina.local}
+      EmailSettings__BaseUrlSmtp: "http://localhost:${SMTP4DEV_WEB_PORT:-5000}"
+      EmailSettings__BaseUrlAprovaRecusaOrcamento: "http://localhost:${API_HTTP_PORT:-8080}"
+      AdminInicial__Enabled: ${ADMIN_INICIAL_ENABLED:-true}
+      AdminInicial__Nome: ${ADMIN_INICIAL_NOME:-Admin Local}
+      AdminInicial__Cpf: ${ADMIN_INICIAL_CPF:-39053344705}
+      AdminInicial__Senha: ${ADMIN_INICIAL_SENHA:-Senha@123}
+    ports:
+      - "127.0.0.1:${API_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      smtp4dev:
+        condition: service_started
+    networks:
+      - oficina-network
+
+networks:
+  oficina-network:
+    driver: bridge
+
+volumes:
+  sqlserver-data:
+  smtp4dev-data:

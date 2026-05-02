@@ -1,0 +1,480 @@
+{
+    "info": {
+        "name": "Oficina API - Seguranca",
+        "description": "Cenarios de autorizacao usando apenas rotas reais da API atual. Execute apos a collection principal ou com as variaveis ja preenchidas.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "00 - Auth",
+            "item": [
+                {
+                    "name": "01 - Login Admin",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/funcionarios",
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "body": {
+                            "raw": "{\"cpf\":\"{{adminCpf}}\",\"senha\":\"{{adminSenha}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.accessToken, \u0027accessToken\u0027).to.be.a(\u0027string\u0027).and.not.empty;",
+                                    "pm.environment.set(\u0027tokenAdmin\u0027, json.accessToken);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Login Funcionario",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/funcionarios",
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "body": {
+                            "raw": "{\"cpf\":\"{{funcionarioCpf}}\",\"senha\":\"{{funcionarioSenha}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.accessToken, \u0027accessToken\u0027).to.be.a(\u0027string\u0027).and.not.empty;",
+                                    "pm.environment.set(\u0027tokenFuncionario\u0027, json.accessToken);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Login Cliente",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/clientes",
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "body": {
+                            "raw": "{\"cpf\":\"{{clienteCpf}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.accessToken, \u0027accessToken\u0027).to.be.a(\u0027string\u0027).and.not.empty;",
+                                    "pm.environment.set(\u0027tokenCliente\u0027, json.accessToken);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "01 - Acessos Negados",
+            "item": [
+                {
+                    "name": "01 - Cliente Em Rota Interna Deve Receber 403",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenCliente}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Funcionario Em Rota Admin Deve Receber 403",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/admin/funcionarios",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Sem Token Deve Receber 401",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes",
+                        "auth": {
+                            "type": "noauth"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 401\u0027, () =\u003e pm.response.to.have.status(401));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "04 - Cliente Em OS De Outro Cliente Deve Receber 403",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/minhas-ordens-servico/{{ordemServicoOutroClienteId}}",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenCliente}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "05 - Cliente Em Orcamento De Outro Cliente Deve Receber 403",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/meus-orcamentos/{{orcamentoOutroClienteId}}",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenCliente}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "https://localhost:5001"
+        },
+        {
+            "key": "adminCpf",
+            "value": "00000000000"
+        },
+        {
+            "key": "adminSenha",
+            "value": "Admin@123"
+        },
+        {
+            "key": "tokenAdmin",
+            "value": ""
+        },
+        {
+            "key": "tokenFuncionario",
+            "value": ""
+        },
+        {
+            "key": "tokenCliente",
+            "value": ""
+        },
+        {
+            "key": "timestamp",
+            "value": ""
+        },
+        {
+            "key": "funcionarioId",
+            "value": ""
+        },
+        {
+            "key": "funcionarioCpf",
+            "value": ""
+        },
+        {
+            "key": "funcionarioSenha",
+            "value": ""
+        },
+        {
+            "key": "clienteId",
+            "value": ""
+        },
+        {
+            "key": "clienteCpf",
+            "value": ""
+        },
+        {
+            "key": "outroClienteId",
+            "value": ""
+        },
+        {
+            "key": "outroClienteCpf",
+            "value": ""
+        },
+        {
+            "key": "veiculoId",
+            "value": ""
+        },
+        {
+            "key": "outroVeiculoId",
+            "value": ""
+        },
+        {
+            "key": "placa",
+            "value": ""
+        },
+        {
+            "key": "outraPlaca",
+            "value": ""
+        },
+        {
+            "key": "renavam",
+            "value": ""
+        },
+        {
+            "key": "outroRenavam",
+            "value": ""
+        },
+        {
+            "key": "servicoId",
+            "value": ""
+        },
+        {
+            "key": "pecaId",
+            "value": ""
+        },
+        {
+            "key": "insumoId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoPreventivaId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoCorretivaId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoClienteId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoOutroClienteId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoPreventivoId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoCorretivoId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoClienteId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoOutroClienteId",
+            "value": ""
+        },
+        {
+            "key": "clienteEmail",
+            "value": ""
+        },
+        {
+            "key": "outroClienteEmail",
+            "value": ""
+        }
+    ]
+}
