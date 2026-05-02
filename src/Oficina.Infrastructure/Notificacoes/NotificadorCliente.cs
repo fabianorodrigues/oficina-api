@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Oficina.Application.Abstractions.Notificacoes;
 using Oficina.Application.Abstractions.Email;
+using Oficina.Application.Abstractions.Notificacoes;
 using Oficina.Application.Abstractions.Repositorios;
 using Oficina.Infrastructure.Email.Configurations;
 using Oficina.Infrastructure.Email.Templates;
@@ -35,24 +35,36 @@ public class NotificadorCliente : INotificadorCliente
         var contexto = await ObterContextoNotificacao(orcamentoId, ct);
         if (contexto is null)
         {
-            _logger.LogWarning("Não foi possível montar o e-mail do orçamento {OrcamentoId}: contexto incompleto.", orcamentoId);
+            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: contexto incompleto.", orcamentoId);
             return;
         }
 
-        var html = EmailOrcamentoTemplate.CriarHtml(contexto.Value.linkAprovar, contexto.Value.linkRecusar);
-        await _emailSender.Enviar(new EmailMessage
+        try
         {
-            To = contexto.Value.emailCliente,
-            Subject = "Orçamento aguardando sua decisão",
-            HtmlBody = html
-        }, ct);
+            var html = EmailOrcamentoTemplate.CriarHtml(contexto.Value.linkAprovar, contexto.Value.linkRecusar);
+            await _emailSender.Enviar(new EmailMessage
+            {
+                To = contexto.Value.emailCliente,
+                Subject = "Orcamento aguardando sua decisao",
+                HtmlBody = html
+            }, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falha ao enviar e-mail do orcamento {OrcamentoId} para {EmailCliente}. A acao principal foi preservada.", orcamentoId, contexto.Value.emailCliente);
+            return;
+        }
 
-        _logger.LogInformation("Notificação por e-mail enviada para orçamento {OrcamentoId} e OS {OrdemServicoId}.", orcamentoId, ordemServicoId);
+        _logger.LogInformation("Notificacao por e-mail enviada para orcamento {OrcamentoId} e OS {OrdemServicoId}.", orcamentoId, ordemServicoId);
     }
 
     public Task NotificarOrcamentoRecusado(Guid orcamentoId, Guid ordemServicoId, CancellationToken ct)
     {
-        _logger.LogInformation("Notificação: orçamento recusado {OrcamentoId} para OS {OrdemServicoId}. Cliente deve retirar o veículo.", orcamentoId, ordemServicoId);
+        _logger.LogInformation("Notificacao: orcamento recusado {OrcamentoId} para OS {OrdemServicoId}. Cliente deve retirar o veiculo.", orcamentoId, ordemServicoId);
         return Task.CompletedTask;
     }
 

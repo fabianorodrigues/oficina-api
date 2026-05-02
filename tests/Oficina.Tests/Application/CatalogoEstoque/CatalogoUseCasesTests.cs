@@ -22,6 +22,34 @@ public class CatalogoUseCasesTests
     }
 
     [Fact]
+    public async Task AtualizarServico_DeveSubstituirPecasEInsumos()
+    {
+        var servico = new Servico(150m);
+        var pecaOriginal = Guid.NewGuid();
+        var insumoOriginal = Guid.NewGuid();
+        var pecaNova = Guid.NewGuid();
+        var insumoNovo = Guid.NewGuid();
+        servico.AdicionarPeca(pecaOriginal, 1);
+        servico.AdicionarInsumo(insumoOriginal, 2);
+
+        var repo = new Mock<ICatalogoEstoqueRepository>();
+        repo.Setup(x => x.ObterServico(servico.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(servico);
+        var uc = new AtualizarServicoUseCase(repo.Object);
+
+        await uc.Executar(275m, servico.Id, [(pecaNova, 3)], [(insumoNovo, 4)], CancellationToken.None);
+
+        Assert.Equal(275m, servico.MaoDeObra);
+        var peca = Assert.Single(servico.Pecas);
+        Assert.Equal(pecaNova, peca.PecaId);
+        Assert.Equal(3, peca.Quantidade);
+        var insumo = Assert.Single(servico.Insumos);
+        Assert.Equal(insumoNovo, insumo.InsumoId);
+        Assert.Equal(4, insumo.Quantidade);
+        repo.Verify(x => x.Salvar(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task CadastrarPeca_deve_adicionar_e_salvar()
     {
         var repo = new Mock<ICatalogoEstoqueRepository>();
