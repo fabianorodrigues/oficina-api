@@ -19,7 +19,8 @@ public static class DependencyInjection
     {
         var cs = config.GetConnectionString("SqlServer");
         Console.WriteLine($"ConnectionString usada: {cs}");
-        services.AddDbContext<OficinaDbContext>(opt => opt.UseSqlServer(cs));
+        services.AddDbContext<OficinaDbContext>(opt =>
+            opt.UseSqlServer(cs, sql => sql.EnableRetryOnFailure()));
 
         services.Configure<EmailSettings>(opt =>
         {

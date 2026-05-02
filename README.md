@@ -1,8 +1,8 @@
 # Oficina API - Tech Challenge FIAP | Fase 3
 
-API REST em .NET 9 para gestao de oficina mecanica, preparada para execucao local antes da evolucao para cloud, API Gateway e componentes serverless.
+API REST em .NET 10 para gestao de oficina mecanica, preparada para execucao local antes da evolucao para cloud, API Gateway e componentes serverless.
 
-Este repositorio concentra a aplicacao base da Fase 3: API, regras de negocio, persistencia, autenticacao local unificada, envio local de e-mail e documentacao para validacao em ambiente Docker Compose.
+Este repositorio concentra a aplicacao base da Fase 3: API, regras de negocio, persistencia, autenticacao local unificada, envio local de e-mail e validacao em ambiente Docker Compose.
 
 ## Visao Geral
 
@@ -33,7 +33,7 @@ O projeto segue uma organizacao inspirada em Clean Architecture, DDD e Use Cases
 
 ## Tecnologias
 
-- .NET 9
+- .NET 10
 - ASP.NET Core
 - Entity Framework Core
 - SQL Server
@@ -45,29 +45,62 @@ O projeto segue uma organizacao inspirada em Clean Architecture, DDD e Use Cases
 - Docker e Docker Compose
 - xUnit, Moq e Coverlet
 
-## Execucao Local Recomendada
+## Pre-requisitos
 
-### Pre-requisitos
+- Docker Desktop em execucao para rodar a stack local completa.
+- .NET SDK 10 para comandos `dotnet` locais.
 
-- Docker Desktop
-- .NET SDK 9.0.313, quando for rodar comandos `dotnet` localmente
+O SDK esperado esta fixado em `global.json`. Esse arquivo define qual SDK da CLI do .NET sera usado por comandos como `dotnet restore`, `dotnet build` e `dotnet test`, sem substituir o `TargetFramework` dos projetos. Ele tambem e usado pelo workflow de CI via `actions/setup-dotnet`.
 
-O SDK esperado esta fixado em `global.json`.
+## Execucao Local com Docker Compose
 
-### Subir a stack local
+Crie o arquivo local de variaveis:
 
 ```powershell
 Copy-Item docker/.env.example docker/.env
-docker compose --env-file docker/.env -f docker/docker-compose.yml up --build
+```
+
+Revise `docker/.env` se precisar mudar portas, senha do SQL Server, JWT, admin inicial ou connection string do banco.
+
+### Modo Local Completo
+
+Use este modo para subir API, SQL Server em container e smtp4dev:
+
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up --build
 ```
 
 Esse comando sobe:
 
 - API;
-- SQL Server;
+- SQL Server local em container;
 - smtp4dev.
 
 Com `RUN_MIGRATION=true`, as migrations sao aplicadas na inicializacao para facilitar validacao local.
+
+### Modo Banco Externo ou RDS
+
+Use este modo para subir apenas API e smtp4dev, conectando a API em um SQL Server externo, como Amazon RDS for SQL Server.
+
+No `docker/.env`, preencha `SQLSERVER_CONNECTION_STRING`:
+
+```text
+SQLSERVER_CONNECTION_STRING=Server=meu-rds.xxxxxx.us-east-1.rds.amazonaws.com,1433;Database=OficinaDb;User Id=admin;Password=SUA_SENHA;Encrypt=True;TrustServerCertificate=True;
+RUN_MIGRATION=false
+```
+
+Suba apenas API e smtp4dev:
+
+```powershell
+docker compose --env-file docker/.env -f docker/docker-compose.yml up --build api smtp4dev
+```
+
+Para usar RDS, confirme antes:
+
+- o RDS e SQL Server compativel;
+- a porta `1433` esta liberada no Security Group/firewall para a maquina que roda Docker;
+- o usuario da connection string tem permissao para ler, escrever e aplicar migrations quando `RUN_MIGRATION=true`;
+- credenciais reais nao foram commitadas no repositorio.
 
 ### Acessos
 
@@ -76,6 +109,64 @@ Com `RUN_MIGRATION=true`, as migrations sao aplicadas na inicializacao para faci
 | Swagger | `http://localhost:8080/swagger` |
 | Healthcheck | `http://localhost:8080/health` |
 | smtp4dev | `http://localhost:5000` |
+
+### Validar healthcheck
+
+```powershell
+Invoke-RestMethod http://localhost:8080/health
+```
+
+Resposta esperada:
+
+```json
+{
+  "status": "Healthy"
+}
+```
+
+## Variaveis Principais
+
+| Variavel | Uso |
+|---|---|
+| `SQLSERVER_CONNECTION_STRING` | Connection string completa para banco externo/RDS. Quando vazia, o Compose usa o SQL Server local em `sqlserver,1433` |
+| `MSSQL_DATABASE` | Nome do banco usado pelo SQL Server local em container |
+| `MSSQL_SA_PASSWORD` | Senha do usuario `sa` do SQL Server local em container |
+| `SQLSERVER_PORT` | Porta local publicada pelo SQL Server em container |
+| `API_HTTP_PORT` | Porta local publicada pela API |
+| `SMTP4DEV_WEB_PORT` | Porta local da interface web do smtp4dev |
+| `SMTP4DEV_SMTP_PORT` | Porta SMTP local do smtp4dev |
+| `ConnectionStrings__SqlServer` | Conexao com SQL Server |
+| `Jwt__Secret` | Chave de assinatura JWT |
+| `Jwt__Issuer` | Emissor do token |
+| `Jwt__Audience` | Audiencia do token |
+| `Jwt__ExpirationMinutes` | Tempo de expiracao do token |
+| `RUN_MIGRATION` | Executa migrations na inicializacao local |
+| `AdminInicial__Nome` | Nome do admin inicial |
+| `AdminInicial__Cpf` | CPF do admin inicial |
+| `AdminInicial__Senha` | Senha do admin inicial |
+| `EmailSettings__SmtpHost` | Host SMTP local |
+| `EmailSettings__BaseUrlAprovaRecusaOrcamento` | Base URL dos links externos de orcamento |
+
+Valores locais sao apenas para desenvolvimento. Em ambientes reais, use variaveis de ambiente, secrets ou ferramentas equivalentes.
+
+## Migrations e Banco Externo
+
+A API executa migrations no startup somente quando `RUN_MIGRATION=true`. O EF Core aplica apenas migrations pendentes no sentido `Up`; ele nao executa os metodos `Down`.
+
+Para banco externo ou RDS com dados existentes, use um fluxo controlado:
+
+1. Tire snapshot ou backup do banco.
+2. Gere um script idempotente:
+
+```powershell
+dotnet ef migrations script --idempotent --project src/Oficina.Infrastructure --startup-project src/Oficina.Api --output artifacts/rds-migration.sql
+```
+
+3. Revise o script antes de aplicar.
+4. Ligue `RUN_MIGRATION=true` apenas para aplicar a migration de forma controlada.
+5. Depois de validar a aplicacao, volte `RUN_MIGRATION=false`.
+
+Depois da subida com migration, valide no banco a tabela `__EFMigrationsHistory`.
 
 ## Autenticacao Local Unificada
 
@@ -115,24 +206,6 @@ Resposta:
 ```
 
 Essa rota foi desenhada para simplificar a integracao futura com API Gateway/Lambda, mantendo a autenticacao local funcional sem acoplar a aplicacao a AWS nesta etapa.
-
-## Variaveis Principais
-
-| Variavel | Uso |
-|---|---|
-| `ConnectionStrings__SqlServer` | Conexao com SQL Server |
-| `Jwt__Secret` | Chave de assinatura JWT |
-| `Jwt__Issuer` | Emissor do token |
-| `Jwt__Audience` | Audiencia do token |
-| `Jwt__ExpirationMinutes` | Tempo de expiracao do token |
-| `RUN_MIGRATION` | Executa migrations na inicializacao local |
-| `AdminInicial__Nome` | Nome do admin inicial |
-| `AdminInicial__Cpf` | CPF do admin inicial |
-| `AdminInicial__Senha` | Senha do admin inicial |
-| `EmailSettings__SmtpHost` | Host SMTP local |
-| `EmailSettings__BaseUrlAprovaRecusaOrcamento` | Base URL dos links externos de orcamento |
-
-Valores locais sao apenas para desenvolvimento. Em ambientes reais, use variaveis de ambiente, secrets ou ferramentas equivalentes.
 
 ## E-mail Local com smtp4dev
 
@@ -218,20 +291,32 @@ Importe a collection e o environment, confirme `baseUrl=http://localhost:8080` e
 
 ## Testes
 
+Executar testes:
+
 ```powershell
-dotnet test Oficina.sln
+dotnet test Oficina.sln --configuration Release --no-build
 ```
 
-Com cobertura:
+Executar testes com cobertura:
 
 ```powershell
 dotnet test Oficina.sln --collect:"XPlat Code Coverage"
 ```
 
-## Mais Detalhes
+Validar a configuracao Docker com SQL Server local:
 
-O roteiro operacional completo esta em:
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml config
+```
 
-```text
-docs/local-development.md
+Validar a configuracao Docker com banco externo/RDS:
+
+```powershell
+docker compose --env-file docker/.env -f docker/docker-compose.yml config
+```
+
+Validar o build da imagem da API:
+
+```powershell
+docker compose --env-file docker/.env -f docker/docker-compose.yml build api
 ```
