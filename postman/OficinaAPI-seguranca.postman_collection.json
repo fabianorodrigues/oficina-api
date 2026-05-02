@@ -24,7 +24,7 @@
                                 "value": "application/json"
                             }
                         ],
-                        "url": "{{baseUrl}}/api/auth/funcionarios",
+                        "url": "{{baseUrl}}/api/auth/cpf",
                         "auth": {
                             "type": "noauth"
                         },
@@ -72,7 +72,7 @@
                                 "value": "application/json"
                             }
                         ],
-                        "url": "{{baseUrl}}/api/auth/funcionarios",
+                        "url": "{{baseUrl}}/api/auth/cpf",
                         "auth": {
                             "type": "noauth"
                         },
@@ -120,7 +120,7 @@
                                 "value": "application/json"
                             }
                         ],
-                        "url": "{{baseUrl}}/api/auth/clientes",
+                        "url": "{{baseUrl}}/api/auth/cpf",
                         "auth": {
                             "type": "noauth"
                         },
@@ -346,15 +346,15 @@
     "variable": [
         {
             "key": "baseUrl",
-            "value": "https://localhost:5001"
+            "value": "http://localhost:8080"
         },
         {
             "key": "adminCpf",
-            "value": "00000000000"
+            "value": "39053344705"
         },
         {
             "key": "adminSenha",
-            "value": "Admin@123"
+            "value": "Senha@123"
         },
         {
             "key": "tokenAdmin",

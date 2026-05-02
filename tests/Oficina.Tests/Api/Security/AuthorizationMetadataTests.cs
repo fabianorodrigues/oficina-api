@@ -42,13 +42,11 @@ public class AuthorizationMetadataTests
     }
 
     [Fact]
-    public void AuthController_DeveExporRotasPlurais()
+    public void AuthController_DeveExporRotaCpfUnificada()
     {
-        var cliente = typeof(AuthController).GetMethod(nameof(AuthController.LoginCliente))!;
-        var funcionario = typeof(AuthController).GetMethod(nameof(AuthController.LoginFuncionario))!;
+        var loginCpf = typeof(AuthController).GetMethod(nameof(AuthController.LoginCpf))!;
 
-        Assert.Equal("clientes", cliente.GetCustomAttributes(typeof(HttpPostAttribute), inherit: true).Cast<HttpPostAttribute>().Single().Template);
-        Assert.Equal("funcionarios", funcionario.GetCustomAttributes(typeof(HttpPostAttribute), inherit: true).Cast<HttpPostAttribute>().Single().Template);
+        Assert.Equal("cpf", loginCpf.GetCustomAttributes(typeof(HttpPostAttribute), inherit: true).Cast<HttpPostAttribute>().Single().Template);
     }
 
     [Fact]
