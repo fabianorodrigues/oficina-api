@@ -20,6 +20,55 @@ public class ValidatorsTests
     }
 
     [Fact]
+    public void AtualizarClienteValidator_deve_rejeitar_email_invalido()
+    {
+        var v = new AtualizarClienteRequestValidator();
+        var r = v.Validate(new AtualizarClienteRequest("39053344705", "Joao", "joao.@email.com", "11999999999"));
+
+        Assert.False(r.IsValid);
+        Assert.Contains(r.Errors, e => e.PropertyName == nameof(AtualizarClienteRequest.Email));
+    }
+
+    [Fact]
+    public void AbrirOrdemServicoValidator_deve_rejeitar_email_placa_renavam_e_quantidades_invalidas()
+    {
+        var v = new AbrirOrdemServicoRequestValidator();
+        var r = v.Validate(new AbrirOrdemServicoRequest
+        {
+            Cliente = new ClienteAberturaRequest
+            {
+                Nome = "Joao",
+                Documento = "39053344705",
+                Email = "joao.@email.com",
+                Telefone = "11999999999"
+            },
+            Veiculo = new VeiculoAberturaRequest
+            {
+                Placa = "ABCD",
+                Renavam = "1234",
+                Modelo = new ModeloAberturaRequest
+                {
+                    Descricao = "Corolla",
+                    Marca = "Toyota",
+                    Ano = 2020
+                }
+            },
+            Itens = new ItensAberturaRequest
+            {
+                Pecas = [new PecaAberturaRequest { PecaId = Guid.NewGuid(), Quantidade = 0 }],
+                Insumos = [new InsumoAberturaRequest { InsumoId = Guid.NewGuid(), Quantidade = -1 }]
+            }
+        });
+
+        Assert.False(r.IsValid);
+        Assert.Contains(r.Errors, e => e.PropertyName == "Cliente.Email");
+        Assert.Contains(r.Errors, e => e.PropertyName == "Veiculo.Placa");
+        Assert.Contains(r.Errors, e => e.PropertyName == "Veiculo.Renavam");
+        Assert.Contains(r.Errors, e => e.PropertyName == "Itens.Pecas[0].Quantidade");
+        Assert.Contains(r.Errors, e => e.PropertyName == "Itens.Insumos[0].Quantidade");
+    }
+
+    [Fact]
     public void CadastrarVeiculoValidator_deve_rejeitar_campos_invalidos()
     {
         var v = new CadastrarVeiculoRequestValidator();

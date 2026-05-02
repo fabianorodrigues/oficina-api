@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Oficina.Api.Filters;
 using Microsoft.OpenApi;
 using Oficina.Api.Middlewares;
 using Oficina.Api.Security;
@@ -13,7 +14,8 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddScoped<FluentValidationActionFilter>();
+builder.Services.AddControllers(opt => opt.Filters.Add<FluentValidationActionFilter>());
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>

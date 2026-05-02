@@ -18,6 +18,7 @@ public class ServicoMap : IEntityTypeConfiguration<Servico>
             items.ToTable("ServicoPecasRequeridas");
             items.WithOwner().HasForeignKey("ServicoId");
             items.HasKey(x => x.Id);
+            items.Property(x => x.Id).ValueGeneratedNever();
             items.Property(x => x.PecaId).IsRequired();
             items.Property(x => x.Quantidade).IsRequired();
         });
@@ -27,6 +28,7 @@ public class ServicoMap : IEntityTypeConfiguration<Servico>
             items.ToTable("ServicoInsumosRequeridos");
             items.WithOwner().HasForeignKey("ServicoId");
             items.HasKey(x => x.Id);
+            items.Property(x => x.Id).ValueGeneratedNever();
             items.Property(x => x.InsumoId).IsRequired();
             items.Property(x => x.Quantidade).IsRequired();
         });
