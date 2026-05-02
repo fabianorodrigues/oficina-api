@@ -1,6 +1,6 @@
 # Oficina API - Tech Challenge FIAP | Fase 3
 
-![Coverage](.github/badges/coverage.svg)
+![Coverage](.github/badges/badge_combined.svg)
 
 API REST em .NET 10 para gestão de oficina mecânica. O repositório concentra API, regras de negócio, persistência, autenticação local, envio de e-mail em ambiente de desenvolvimento e testes automatizados.
 
