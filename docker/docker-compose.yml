@@ -4,9 +4,11 @@ services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     container_name: oficina-sqlserver
+    profiles:
+      - local-db
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Oficina_dev_2026!}
+      MSSQL_SA_PASSWORD: ${SQLSERVER_PASSWORD:-Oficina_dev_2026!}
     ports:
       - "127.0.0.1:${SQLSERVER_PORT:-1433}:1433"
     volumes:
@@ -17,7 +19,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${MSSQL_SA_PASSWORD:-Oficina_dev_2026!}' -Q 'SELECT 1' -C || exit 1"
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P '${SQLSERVER_PASSWORD:-Oficina_dev_2026!}' -Q 'SELECT 1' -C || exit 1"
         ]
       interval: 10s
       timeout: 5s
@@ -49,7 +51,7 @@ services:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ASPNETCORE_URLS: "http://+:8080"
       RUN_MIGRATION: ${RUN_MIGRATION:-false}
-      ConnectionStrings__SqlServer: "Server=sqlserver,1433;Database=${MSSQL_DATABASE:-OficinaDb};User Id=sa;Password=${MSSQL_SA_PASSWORD:-Oficina_dev_2026!};TrustServerCertificate=True;"
+      ConnectionStrings__SqlServer: "Server=${SQLSERVER_HOST:-sqlserver},${SQLSERVER_PORT:-1433};Database=${SQLSERVER_DATABASE:-OficinaDb};User Id=${SQLSERVER_USER:-sa};Password=${SQLSERVER_PASSWORD:-Oficina_dev_2026!};Encrypt=${SQLSERVER_ENCRYPT:-False};TrustServerCertificate=${SQLSERVER_TRUST_SERVER_CERTIFICATE:-True};"
       Jwt__Secret: ${JWT_SECRET:-oficina-local-development-secret-2026}
       Jwt__Key: ${JWT_SECRET:-oficina-local-development-secret-2026}
       Jwt__Issuer: ${JWT_ISSUER:-Oficina.Api}
@@ -75,8 +77,6 @@ services:
       retries: 12
       start_period: 30s
     depends_on:
-      sqlserver:
-        condition: service_healthy
       smtp4dev:
         condition: service_started
     networks:

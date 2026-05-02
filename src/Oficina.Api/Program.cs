@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Oficina.Api.Middlewares;
 using Oficina.Api.Security;
 using Oficina.Application.Abstractions.Seguranca;
@@ -20,19 +20,20 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Oficina API", Version = "v1" });
 
-    var securityScheme = new OpenApiSecurityScheme
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization",
         Description = "Bearer {token}",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
-        BearerFormat = "JWT",
-        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
-    };
+        BearerFormat = "JWT"
+    });
 
-    c.AddSecurityDefinition("Bearer", securityScheme);
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement { { securityScheme, new List<string>() } });
+    c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        { new OpenApiSecuritySchemeReference("Bearer", document, null), new List<string>() }
+    });
 });
 
 builder.Services.AddApplication();
@@ -84,26 +85,7 @@ var app = builder.Build();
 
 var runMigration = builder.Configuration.GetValue<bool>("RUN_MIGRATION");
 
-if (runMigration)
-{
-    using (var scope = app.Services.CreateScope())
-    {
-        var services = scope.ServiceProvider;
-
-        try
-        {
-            var dbContext = services.GetRequiredService<OficinaDbContext>();
-            dbContext.Database.Migrate();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Erro ao executar migration: {ex.Message}");
-            throw;
-        }
-    }
-}
-
-await AdminInicialBootstrapper.GarantirAdminInicial(app);
+await ExecutarInicializacaoBancoComRetry(app, runMigration);
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
@@ -120,3 +102,35 @@ app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
 app.MapControllers();
 
 app.Run();
+
+static async Task ExecutarInicializacaoBancoComRetry(WebApplication app, bool runMigration)
+{
+    const int maxTentativas = 12;
+    var intervalo = TimeSpan.FromSeconds(5);
+
+    for (var tentativa = 1; tentativa <= maxTentativas; tentativa++)
+    {
+        try
+        {
+            if (runMigration)
+            {
+                using var scope = app.Services.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<OficinaDbContext>();
+                dbContext.Database.Migrate();
+            }
+
+            await AdminInicialBootstrapper.GarantirAdminInicial(app);
+            return;
+        }
+        catch (Exception ex) when (tentativa < maxTentativas)
+        {
+            Console.WriteLine($"Banco indisponivel na tentativa {tentativa}/{maxTentativas}. Nova tentativa em {intervalo.TotalSeconds}s. Erro: {ex.Message}");
+            await Task.Delay(intervalo);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao inicializar banco apos {maxTentativas} tentativas: {ex.Message}");
+            throw;
+        }
+    }
+}

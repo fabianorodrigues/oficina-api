@@ -35,7 +35,6 @@ public class NotificadorCliente : INotificadorCliente
         var contexto = await ObterContextoNotificacao(orcamentoId, ct);
         if (contexto is null)
         {
-            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: contexto incompleto.", orcamentoId);
             return;
         }
 
@@ -71,16 +70,44 @@ public class NotificadorCliente : INotificadorCliente
     private async Task<(string emailCliente, string linkAprovar, string linkRecusar)?> ObterContextoNotificacao(Guid orcamentoId, CancellationToken ct)
     {
         var orcamento = await _oficina.ObterOrcamento(orcamentoId, ct);
-        if (orcamento?.TokenAcaoExterna is null) return null;
+        if (orcamento is null)
+        {
+            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: orcamento nao encontrado.", orcamentoId);
+            return null;
+        }
+
+        if (orcamento.TokenAcaoExterna is null)
+        {
+            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: token de acao externa ausente.", orcamentoId);
+            return null;
+        }
 
         var os = await _oficina.ObterOrdemServico(orcamento.OrdemServicoId, ct);
-        if (os is null) return null;
+        if (os is null)
+        {
+            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: ordem de servico {OrdemServicoId} nao encontrada.", orcamentoId, orcamento.OrdemServicoId);
+            return null;
+        }
 
         var veiculo = await _cadastro.ObterVeiculo(os.VeiculoId, ct);
-        if (veiculo is null) return null;
+        if (veiculo is null)
+        {
+            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: veiculo {VeiculoId} nao encontrado.", orcamentoId, os.VeiculoId);
+            return null;
+        }
 
         var cliente = await _cadastro.ObterCliente(veiculo.ClienteId, ct);
-        if (cliente?.Contato?.Email is null) return null;
+        if (cliente is null)
+        {
+            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: cliente {ClienteId} nao encontrado.", orcamentoId, veiculo.ClienteId);
+            return null;
+        }
+
+        if (cliente.Contato?.Email is null)
+        {
+            _logger.LogWarning("Nao foi possivel montar o e-mail do orcamento {OrcamentoId}: cliente {ClienteId} sem e-mail cadastrado.", orcamentoId, cliente.Id);
+            return null;
+        }
 
         var baseUrl = _emailSettings.BaseUrlAprovaRecusaOrcamento.TrimEnd('/');
         var token = Uri.EscapeDataString(orcamento.TokenAcaoExterna);

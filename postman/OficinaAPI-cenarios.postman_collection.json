@@ -46,13 +46,13 @@
                                     "pm.environment.set(\u0027clienteCpf\u0027, cpf(seed));",
                                     "pm.environment.set(\u0027outroClienteCpf\u0027, cpf(seed + 101));",
                                     "pm.environment.set(\u0027funcionarioCpf\u0027, cpf(seed + 202));",
-                                    "pm.environment.set(\u0027funcionarioSenha\u0027, Func@);",
-                                    "pm.environment.set(\u0027placa\u0027, ${letters(3)}.slice(0,7));",
-                                    "pm.environment.set(\u0027outraPlaca\u0027, ${letters(3)}.slice(0,7));",
+                                    "pm.environment.set(\u0027funcionarioSenha\u0027, \u0027Func@123\u0027);",
+                                    "pm.environment.set(\u0027placa\u0027, `${letters(3)}${r(0,9)}${letters(1)}${r(10,99)}`);",
+                                    "pm.environment.set(\u0027outraPlaca\u0027, `${letters(3)}${r(0,9)}${letters(1)}${r(10,99)}`);",
                                     "pm.environment.set(\u0027renavam\u0027, ren(seed));",
                                     "pm.environment.set(\u0027outroRenavam\u0027, ren(seed + 4444));",
-                                    "pm.environment.set(\u0027clienteEmail\u0027, joao.@email.com);",
-                                    "pm.environment.set(\u0027outroClienteEmail\u0027, maria.@email.com);"
+                                    "pm.environment.set(\u0027clienteEmail\u0027, `joao.${now}@email.com`);",
+                                    "pm.environment.set(\u0027outroClienteEmail\u0027, `maria.${now}@email.com`);"
                                 ],
                                 "type": "text/javascript"
                             },
