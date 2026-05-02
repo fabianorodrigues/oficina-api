@@ -30,6 +30,10 @@ public class RegistrarDiagnosticoUseCase
         var os = await _oficina.ObterOrdemServico(ordemServicoId, ct)
                  ?? throw new OficinaException("Ordem de serviço não encontrada.", 404);
 
+        var orcamentoExistente = await _oficina.ObterOrcamentoPorOs(ordemServicoId, ct);
+        if (orcamentoExistente is not null)
+            throw new OficinaException("Ordem de servico ja possui orcamento.", 409);
+
         os.RegistrarDiagnostico(descricao, servicoIds);
         await _oficina.Salvar(ct);
 
