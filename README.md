@@ -1,68 +1,65 @@
 # Oficina API - Tech Challenge FIAP | Fase 3
 
-API REST em .NET 10 para gestao de oficina mecanica, preparada para execucao local antes da evolucao para cloud, API Gateway e componentes serverless.
+API REST em .NET 10 para gestão de oficina mecânica. O repositório concentra API, regras de negócio, persistência, autenticação local, envio de e-mail em ambiente de desenvolvimento e testes automatizados.
 
-Este repositorio concentra a aplicacao base da Fase 3: API, regras de negocio, persistencia, autenticacao local unificada, envio local de e-mail e validacao em ambiente Docker Compose.
+## Visão Geral
 
-## Visao Geral
+- Cadastro e manutenção de clientes e veículos.
+- Gestão de serviços, peças, insumos e estoque.
+- Abertura, classificação e acompanhamento de ordens de serviço.
+- Registro de diagnóstico, geração de orçamento e aprovação/recusa.
+- Autenticação JWT por CPF para clientes, funcionários e admins.
+- Envio local de e-mails pelo smtp4dev para validar fluxos de orçamento.
 
-A aplicacao permite:
-
-- cadastro e manutencao de clientes e veiculos;
-- gestao de servicos, pecas, insumos e estoque;
-- abertura e acompanhamento de ordens de servico;
-- classificacao da OS como preventiva ou corretiva;
-- registro de diagnostico;
-- geracao e aprovacao/recusa de orcamentos;
-- autenticacao JWT por CPF;
-- consulta de recursos pelo cliente autenticado;
-- aprovacao/recusa externa de orcamento por link enviado por e-mail;
-- validacao local por Swagger, Postman e smtp4dev.
-
-## Arquitetura
-
-O projeto segue uma organizacao inspirada em Clean Architecture, DDD e Use Cases.
+## Arquitetura e Tecnologias
 
 | Projeto | Responsabilidade |
 |---|---|
-| `Oficina.Api` | Controllers, autenticacao, autorizacao, Swagger, healthcheck e middleware de erro |
-| `Oficina.Application` | Casos de uso, contratos, validacoes e modelos de aplicacao |
-| `Oficina.Domain` | Entidades, value objects, enums e regras de negocio |
-| `Oficina.Infrastructure` | EF Core, repositorios, SQL Server e integracoes externas |
-| `Oficina.Tests` | Testes de dominio, aplicacao, API, seguranca e infraestrutura |
+| `Oficina.Api` | Controllers, autenticação, autorização, Swagger, healthcheck e middleware de erro |
+| `Oficina.Application` | Casos de uso, contratos, validações e modelos de aplicação |
+| `Oficina.Domain` | Entidades, value objects, enums e regras de negócio |
+| `Oficina.Infrastructure` | EF Core, repositórios, SQL Server e integrações externas |
+| `Oficina.Tests` | Testes de domínio, aplicação, API, segurança e infraestrutura |
 
-## Tecnologias
+Principais tecnologias: .NET 10, ASP.NET Core, Entity Framework Core, SQL Server, JWT Bearer, FluentValidation, MailKit, smtp4dev, Swagger/OpenAPI, Docker Compose, xUnit, Moq e Coverlet.
 
-- .NET 10
-- ASP.NET Core
-- Entity Framework Core
-- SQL Server
-- JWT Bearer
-- FluentValidation
-- MailKit
-- smtp4dev
-- Swagger/OpenAPI
-- Docker e Docker Compose
-- xUnit, Moq e Coverlet
+## Pré-requisitos
 
-## Pre-requisitos
+- Docker Desktop.
+- .NET SDK 10 para comandos locais de `dotnet`.
 
-- Docker Desktop em execucao para rodar a stack local completa.
-- .NET SDK 10 para comandos `dotnet` locais.
+O SDK esperado está fixado em `global.json`, que também é usado pelo workflow de CI.
 
-O SDK esperado esta fixado em `global.json`. Esse arquivo define qual SDK da CLI do .NET sera usado por comandos como `dotnet restore`, `dotnet build` e `dotnet test`, sem substituir o `TargetFramework` dos projetos. Ele tambem e usado pelo workflow de CI via `actions/setup-dotnet`.
+## Configuração
 
-## Execucao Local com Docker Compose
-
-Crie o arquivo local de variaveis:
+Crie o arquivo local de variáveis:
 
 ```powershell
 Copy-Item docker/.env.example docker/.env
 ```
 
-Revise `docker/.env` se precisar mudar portas, senha do SQL Server, JWT, admin inicial ou connection string do banco.
+O Compose monta a connection string da API a partir das variáveis `SQLSERVER_*`.
 
-### Modo Local Completo
+| Variável | Uso |
+|---|---|
+| `SQLSERVER_HOST` | Host do SQL Server. Use `sqlserver` para container local ou endpoint do RDS |
+| `SQLSERVER_PORT` | Porta do SQL Server, normalmente `1433` |
+| `SQLSERVER_DATABASE` | Nome do banco |
+| `SQLSERVER_USER` | Usuário do banco |
+| `SQLSERVER_PASSWORD` | Senha do banco |
+| `SQLSERVER_ENCRYPT` | `False` no local; normalmente `True` para RDS |
+| `SQLSERVER_TRUST_SERVER_CERTIFICATE` | `True` para desenvolvimento/local |
+| `RUN_MIGRATION` | Quando `true`, aplica migrations ao subir a API |
+| `API_HTTP_PORT` | Porta local da API |
+| `SMTP4DEV_WEB_PORT` | Porta local da interface web do smtp4dev |
+| `JWT_SECRET` | Chave usada para assinar tokens JWT |
+| `ADMIN_INICIAL_*` | Dados do admin inicial criado em desenvolvimento |
+
+Não commite credenciais reais no `.env`.
+
+## Como Rodar
+
+### Local Completo
 
 Use este modo para subir API, SQL Server em container e smtp4dev:
 
@@ -70,37 +67,36 @@ Use este modo para subir API, SQL Server em container e smtp4dev:
 docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up --build
 ```
 
-Esse comando sobe:
-
-- API;
-- SQL Server local em container;
-- smtp4dev.
-
-Com `RUN_MIGRATION=true`, as migrations sao aplicadas na inicializacao para facilitar validacao local.
-
-### Modo Banco Externo ou RDS
-
-Use este modo para subir apenas API e smtp4dev, conectando a API em um SQL Server externo, como Amazon RDS for SQL Server.
-
-No `docker/.env`, preencha `SQLSERVER_CONNECTION_STRING`:
+No `docker/.env`, mantenha:
 
 ```text
-SQLSERVER_CONNECTION_STRING=Server=meu-rds.xxxxxx.us-east-1.rds.amazonaws.com,1433;Database=OficinaDb;User Id=admin;Password=SUA_SENHA;Encrypt=True;TrustServerCertificate=True;
-RUN_MIGRATION=false
+SQLSERVER_HOST=sqlserver
+SQLSERVER_USER=sa
+RUN_MIGRATION=true
 ```
 
-Suba apenas API e smtp4dev:
+### Banco Externo ou RDS
+
+Use este modo para subir API e smtp4dev localmente, apontando a API para um SQL Server externo:
 
 ```powershell
 docker compose --env-file docker/.env -f docker/docker-compose.yml up --build api smtp4dev
 ```
 
-Para usar RDS, confirme antes:
+Exemplo de variáveis para RDS SQL Server:
 
-- o RDS e SQL Server compativel;
-- a porta `1433` esta liberada no Security Group/firewall para a maquina que roda Docker;
-- o usuario da connection string tem permissao para ler, escrever e aplicar migrations quando `RUN_MIGRATION=true`;
-- credenciais reais nao foram commitadas no repositorio.
+```text
+SQLSERVER_HOST=meu-rds.xxxxxx.us-east-1.rds.amazonaws.com
+SQLSERVER_PORT=1433
+SQLSERVER_DATABASE=OficinaDb
+SQLSERVER_USER=admin
+SQLSERVER_PASSWORD=SUA_SENHA
+SQLSERVER_ENCRYPT=True
+SQLSERVER_TRUST_SERVER_CERTIFICATE=True
+RUN_MIGRATION=false
+```
+
+Antes de usar RDS, confirme que o Security Group/firewall permite conexão na porta `1433` a partir da máquina que roda Docker.
 
 ### Acessos
 
@@ -110,7 +106,7 @@ Para usar RDS, confirme antes:
 | Healthcheck | `http://localhost:8080/health` |
 | smtp4dev | `http://localhost:5000` |
 
-### Validar healthcheck
+Valide a API:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/health
@@ -124,59 +120,34 @@ Resposta esperada:
 }
 ```
 
-## Variaveis Principais
+## Migrations
 
-| Variavel | Uso |
-|---|---|
-| `SQLSERVER_CONNECTION_STRING` | Connection string completa para banco externo/RDS. Quando vazia, o Compose usa o SQL Server local em `sqlserver,1433` |
-| `MSSQL_DATABASE` | Nome do banco usado pelo SQL Server local em container |
-| `MSSQL_SA_PASSWORD` | Senha do usuario `sa` do SQL Server local em container |
-| `SQLSERVER_PORT` | Porta local publicada pelo SQL Server em container |
-| `API_HTTP_PORT` | Porta local publicada pela API |
-| `SMTP4DEV_WEB_PORT` | Porta local da interface web do smtp4dev |
-| `SMTP4DEV_SMTP_PORT` | Porta SMTP local do smtp4dev |
-| `ConnectionStrings__SqlServer` | Conexao com SQL Server |
-| `Jwt__Secret` | Chave de assinatura JWT |
-| `Jwt__Issuer` | Emissor do token |
-| `Jwt__Audience` | Audiencia do token |
-| `Jwt__ExpirationMinutes` | Tempo de expiracao do token |
-| `RUN_MIGRATION` | Executa migrations na inicializacao local |
-| `AdminInicial__Nome` | Nome do admin inicial |
-| `AdminInicial__Cpf` | CPF do admin inicial |
-| `AdminInicial__Senha` | Senha do admin inicial |
-| `EmailSettings__SmtpHost` | Host SMTP local |
-| `EmailSettings__BaseUrlAprovaRecusaOrcamento` | Base URL dos links externos de orcamento |
+A API executa migrations no startup somente quando `RUN_MIGRATION=true`. O EF Core aplica migrations pendentes no sentido `Up`; ele não executa os métodos `Down`.
 
-Valores locais sao apenas para desenvolvimento. Em ambientes reais, use variaveis de ambiente, secrets ou ferramentas equivalentes.
-
-## Migrations e Banco Externo
-
-A API executa migrations no startup somente quando `RUN_MIGRATION=true`. O EF Core aplica apenas migrations pendentes no sentido `Up`; ele nao executa os metodos `Down`.
-
-Para banco externo ou RDS com dados existentes, use um fluxo controlado:
+Para RDS ou banco com dados existentes:
 
 1. Tire snapshot ou backup do banco.
-2. Gere um script idempotente:
+2. Comece com `RUN_MIGRATION=false`.
+3. Gere e revise o script idempotente:
 
 ```powershell
 dotnet ef migrations script --idempotent --project src/Oficina.Infrastructure --startup-project src/Oficina.Api --output artifacts/rds-migration.sql
 ```
 
-3. Revise o script antes de aplicar.
-4. Ligue `RUN_MIGRATION=true` apenas para aplicar a migration de forma controlada.
-5. Depois de validar a aplicacao, volte `RUN_MIGRATION=false`.
+4. Aplique migrations de forma controlada com `RUN_MIGRATION=true`.
+5. Depois de validar, volte `RUN_MIGRATION=false`.
 
-Depois da subida com migration, valide no banco a tabela `__EFMigrationsHistory`.
+Depois da aplicação, confira a tabela `__EFMigrationsHistory`.
 
-## Autenticacao Local Unificada
+## Autenticação
 
-A API expoe uma unica rota publica de login:
+A rota pública de login é:
 
-| Metodo | Endpoint | Descricao |
+| Método | Endpoint | Descrição |
 |---|---|---|
-| POST | `/api/auth/cpf` | Autentica cliente, funcionario ou admin por CPF |
+| POST | `/api/auth/cpf` | Autentica cliente, funcionário ou admin por CPF |
 
-Clientes autenticam apenas com CPF:
+Cliente:
 
 ```json
 {
@@ -184,7 +155,7 @@ Clientes autenticam apenas com CPF:
 }
 ```
 
-Funcionarios e admins autenticam com CPF e senha:
+Admin ou funcionário:
 
 ```json
 {
@@ -193,93 +164,15 @@ Funcionarios e admins autenticam com CPF e senha:
 }
 ```
 
-Resposta:
+Use o token retornado como `Bearer` no Swagger ou Postman. As rotas completas da API ficam disponíveis no Swagger.
 
-```json
-{
-  "accessToken": "...",
-  "expiresIn": 7200,
-  "perfil": "Admin",
-  "clienteId": null,
-  "funcionarioId": "00000000-0000-0000-0000-000000000000"
-}
-```
+## E-mail Local
 
-Essa rota foi desenhada para simplificar a integracao futura com API Gateway/Lambda, mantendo a autenticacao local funcional sem acoplar a aplicacao a AWS nesta etapa.
-
-## E-mail Local com smtp4dev
-
-O smtp4dev captura e-mails enviados pela API durante o fluxo de orcamento.
-
-Fluxo esperado:
-
-1. A API gera um orcamento.
-2. O sistema envia um e-mail ao cliente.
-3. O e-mail aparece em `http://localhost:5000`.
-4. O cliente usa os links de aprovar ou recusar.
-5. A API processa a acao externa por token.
-
-Links externos gerados:
-
-```text
-/api/orcamentos/acoes-externas/aprovar?token=...
-/api/orcamentos/acoes-externas/recusar?token=...
-```
-
-Falhas de SMTP sao registradas em log, mas nao derrubam a acao principal ja persistida.
-
-## Rotas Principais
-
-### Auth
-
-| Metodo | Endpoint | Perfil | Descricao |
-|---|---|---|---|
-| POST | `/api/auth/cpf` | Publico | Login unificado por CPF |
-
-### Cliente autenticado
-
-| Metodo | Endpoint | Perfil | Descricao |
-|---|---|---|---|
-| GET | `/api/minhas-ordens-servico` | Cliente | Lista OS do cliente autenticado |
-| GET | `/api/minhas-ordens-servico/{id}` | Cliente | Detalha OS propria |
-| GET | `/api/minhas-ordens-servico/{id}/status` | Cliente | Consulta status da OS propria |
-| GET | `/api/meus-orcamentos/{id}` | Cliente | Consulta orcamento proprio |
-| POST | `/api/meus-orcamentos/{id}/aprovar` | Cliente | Aprova orcamento proprio |
-| POST | `/api/meus-orcamentos/{id}/recusar` | Cliente | Recusa orcamento proprio |
-
-### Operacao interna
-
-| Metodo | Endpoint | Perfil | Descricao |
-|---|---|---|---|
-| GET/POST/PUT | `/api/clientes` | Funcionario/Admin | Cadastro de clientes |
-| GET/POST/PUT | `/api/veiculos` | Funcionario/Admin | Cadastro de veiculos |
-| GET/POST/PUT | `/api/servicos` | Funcionario/Admin | Catalogo de servicos |
-| GET/POST/PUT | `/api/pecas` | Funcionario/Admin | Catalogo de pecas |
-| GET/POST/PUT | `/api/insumos` | Funcionario/Admin | Catalogo de insumos |
-| GET/POST | `/api/estoque` | Funcionario/Admin | Consulta e ajuste de estoque |
-| GET/POST | `/api/ordens-servico` | Funcionario/Admin | Fluxo de OS |
-| GET/POST | `/api/orcamentos` | Funcionario/Admin | Fluxo de orcamento |
-| GET | `/api/relatorios/tempo-medio-execucao` | Funcionario/Admin | Relatorio operacional |
-
-### Admin
-
-| Metodo | Endpoint | Perfil | Descricao |
-|---|---|---|---|
-| GET | `/api/admin/funcionarios` | Admin | Lista funcionarios/admins |
-| POST | `/api/admin/funcionarios` | Admin | Cria funcionario/admin |
-| PUT/PATCH | `/api/admin/funcionarios/{id}` | Admin | Mantem usuario interno |
-
-### Publico
-
-| Metodo | Endpoint | Perfil | Descricao |
-|---|---|---|---|
-| GET | `/api/orcamentos/acoes-externas/aprovar?token=...` | Publico | Aprova orcamento por token |
-| GET | `/api/orcamentos/acoes-externas/recusar?token=...` | Publico | Recusa orcamento por token |
-| GET | `/health` | Publico | Status da API |
+O smtp4dev captura os e-mails enviados pela API em desenvolvimento. Acesse `http://localhost:5000` para validar mensagens e links de aprovação/recusa de orçamento.
 
 ## Postman
 
-Arquivos:
+Arquivos disponíveis:
 
 ```text
 postman/OficinaAPI-cenarios.postman_collection.json
@@ -287,9 +180,16 @@ postman/OficinaAPI-cenarios.postman_environment.json
 postman/OficinaAPI-seguranca.postman_collection.json
 ```
 
-Importe a collection e o environment, confirme `baseUrl=http://localhost:8080` e execute os cenarios pelo Collection Runner.
+Importe a collection e o environment, confirme `baseUrl=http://localhost:8080` e execute os cenários pelo Collection Runner.
 
-## Testes
+## Testes e Validação
+
+Restaurar e compilar:
+
+```powershell
+dotnet restore Oficina.sln
+dotnet build Oficina.sln --configuration Release --no-restore
+```
 
 Executar testes:
 
@@ -297,25 +197,19 @@ Executar testes:
 dotnet test Oficina.sln --configuration Release --no-build
 ```
 
-Executar testes com cobertura:
-
-```powershell
-dotnet test Oficina.sln --collect:"XPlat Code Coverage"
-```
-
-Validar a configuracao Docker com SQL Server local:
+Validar configuração Docker local:
 
 ```powershell
 docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml config
 ```
 
-Validar a configuracao Docker com banco externo/RDS:
+Validar configuração Docker para banco externo/RDS:
 
 ```powershell
 docker compose --env-file docker/.env -f docker/docker-compose.yml config
 ```
 
-Validar o build da imagem da API:
+Validar build da imagem:
 
 ```powershell
 docker compose --env-file docker/.env -f docker/docker-compose.yml build api
