@@ -1,0 +1,2712 @@
+{
+    "info": {
+        "name": "Oficina API - Cenarios Sequenciais",
+        "description": "Collection sequencial baseada somente nas rotas reais da API atual.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "00 - Setup",
+            "item": [
+                {
+                    "name": "01 - Gerar Dados E Healthcheck",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/health",
+                        "auth": {
+                            "type": "noauth"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "const now = Date.now().toString();",
+                                    "pm.environment.set(\u0027timestamp\u0027, now);",
+                                    "function digits(v){ return String(v).replace(/\\D/g, \u0027\u0027); }",
+                                    "function cpf(base){",
+                                    "  let d = digits(base).padStart(9, \u00270\u0027).slice(-9).split(\u0027\u0027).map(Number);",
+                                    "  const calc = (a) =\u003e { const s = a.reduce((x,n,i)=\u003ex+n*(a.length+1-i),0); const m=s%11; return m\u003c2?0:11-m; };",
+                                    "  d.push(calc(d)); d.push(calc(d)); return d.join(\u0027\u0027);",
+                                    "}",
+                                    "function r(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }",
+                                    "function letters(n){ const a=\u0027ABCDEFGHIJKLMNOPQRSTUVWXYZ\u0027; let v=\u0027\u0027; for(let i=0;i\u003cn;i++) v+=a[r(0,a.length-1)]; return v; }",
+                                    "function ren(seed){ return digits(seed).padStart(11,\u00270\u0027).slice(-11); }",
+                                    "const seed = Number(now.slice(-8));",
+                                    "pm.environment.set(\u0027clienteCpf\u0027, cpf(seed));",
+                                    "pm.environment.set(\u0027outroClienteCpf\u0027, cpf(seed + 101));",
+                                    "pm.environment.set(\u0027funcionarioCpf\u0027, cpf(seed + 202));",
+                                    "pm.environment.set(\u0027funcionarioSenha\u0027, Func@);",
+                                    "pm.environment.set(\u0027placa\u0027, ${letters(3)}.slice(0,7));",
+                                    "pm.environment.set(\u0027outraPlaca\u0027, ${letters(3)}.slice(0,7));",
+                                    "pm.environment.set(\u0027renavam\u0027, ren(seed));",
+                                    "pm.environment.set(\u0027outroRenavam\u0027, ren(seed + 4444));",
+                                    "pm.environment.set(\u0027clienteEmail\u0027, joao.@email.com);",
+                                    "pm.environment.set(\u0027outroClienteEmail\u0027, maria.@email.com);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "prerequest"
+                        },
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.test(\u0027healthy\u0027, () =\u003e pm.expect(json.status).to.eql(\u0027Healthy\u0027));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "01 - Auth",
+            "item": [
+                {
+                    "name": "01 - Login Admin",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/funcionarios",
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "body": {
+                            "raw": "{\"cpf\":\"{{adminCpf}}\",\"senha\":\"{{adminSenha}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.accessToken, \u0027accessToken\u0027).to.be.a(\u0027string\u0027).and.not.empty;",
+                                    "pm.environment.set(\u0027tokenAdmin\u0027, json.accessToken);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "02 - Admin",
+            "item": [
+                {
+                    "name": "01 - Criar Funcionario",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/admin/funcionarios",
+                        "body": {
+                            "raw": "{\"nome\":\"Funcionario {{timestamp}}\",\"cpf\":\"{{funcionarioCpf}}\",\"senha\":\"{{funcionarioSenha}}\",\"perfil\":\"Funcionario\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027funcionarioId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Listar Funcionarios",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/admin/funcionarios"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Consultar Funcionario",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/admin/funcionarios/{{funcionarioId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "04 - Login Funcionario",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/funcionarios",
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "body": {
+                            "raw": "{\"cpf\":\"{{funcionarioCpf}}\",\"senha\":\"{{funcionarioSenha}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.accessToken, \u0027accessToken\u0027).to.be.a(\u0027string\u0027).and.not.empty;",
+                                    "pm.environment.set(\u0027tokenFuncionario\u0027, json.accessToken);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ],
+            "auth": {
+                "bearer": [
+                    {
+                        "key": "token",
+                        "type": "string",
+                        "value": "{{tokenAdmin}}"
+                    }
+                ],
+                "type": "bearer"
+            }
+        },
+        {
+            "name": "03 - Cadastro E Catalogo",
+            "item": [
+                {
+                    "name": "01 - Criar Cliente",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes",
+                        "body": {
+                            "raw": "{\"cpfCnpj\":\"{{clienteCpf}}\",\"nome\":\"Joao {{timestamp}}\",\"email\":\"{{clienteEmail}}\",\"telefone\":\"11999999999\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027clienteId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Criar Outro Cliente",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes",
+                        "body": {
+                            "raw": "{\"cpfCnpj\":\"{{outroClienteCpf}}\",\"nome\":\"Maria {{timestamp}}\",\"email\":\"{{outroClienteEmail}}\",\"telefone\":\"11888888888\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027outroClienteId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Listar Clientes",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "04 - Consultar Cliente",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes/{{clienteId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "05 - Atualizar Cliente",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes/{{clienteId}}",
+                        "body": {
+                            "raw": "{\"cpfCnpj\":\"{{clienteCpf}}\",\"nome\":\"Joao {{timestamp}}\",\"email\":\"{{clienteEmail}}\",\"telefone\":\"11999999999\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "06 - Criar Veiculo",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/veiculos",
+                        "body": {
+                            "raw": "{\"clienteId\":\"{{clienteId}}\",\"placa\":\"{{placa}}\",\"renavam\":\"{{renavam}}\",\"modelo\":{\"descricao\":\"Corolla XEi\",\"marca\":\"Toyota\",\"ano\":2020}}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027veiculoId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "07 - Criar Outro Veiculo",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/veiculos",
+                        "body": {
+                            "raw": "{\"clienteId\":\"{{outroClienteId}}\",\"placa\":\"{{outraPlaca}}\",\"renavam\":\"{{outroRenavam}}\",\"modelo\":{\"descricao\":\"Civic EXL\",\"marca\":\"Honda\",\"ano\":2019}}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027outroVeiculoId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "08 - Listar Veiculos",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/veiculos"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "09 - Consultar Veiculo",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/veiculos/{{veiculoId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "10 - Atualizar Veiculo",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/veiculos/{{veiculoId}}",
+                        "body": {
+                            "raw": "{\"placa\":\"{{placa}}\",\"renavam\":\"{{renavam}}\",\"modelo\":{\"descricao\":\"Corolla XEi Atualizado\",\"marca\":\"Toyota\",\"ano\":2020}}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "11 - Criar Peca",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/pecas",
+                        "body": {
+                            "raw": "{\"precoUnitario\":120.50,\"descricao\":\"Filtro de oleo {{timestamp}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027pecaId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "12 - Criar Insumo",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/insumos",
+                        "body": {
+                            "raw": "{\"precoUnitario\":35.90,\"descricao\":\"Oleo 5W30 {{timestamp}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027insumoId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "13 - Ajustar Estoque Peca",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/estoque/pecas/{{pecaId}}/ajustar",
+                        "body": {
+                            "raw": "{\"quantidade\":20}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "14 - Ajustar Estoque Insumo",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/estoque/insumos/{{insumoId}}/ajustar",
+                        "body": {
+                            "raw": "{\"quantidade\":20}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "15 - Consultar Estoque",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/estoque"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "16 - Consultar Estoque Peca",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/estoque/pecas/{{pecaId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "17 - Consultar Estoque Insumo",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/estoque/insumos/{{insumoId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "18 - Criar Servico",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/servicos",
+                        "body": {
+                            "raw": "{\"maoDeObra\":250.00,\"pecas\":[{\"id\":\"{{pecaId}}\",\"quantidade\":1}],\"insumos\":[{\"id\":\"{{insumoId}}\",\"quantidade\":2}]}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027servicoId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "19 - Listar Servicos",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/servicos"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "20 - Consultar Servico",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/servicos/{{servicoId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "21 - Atualizar Servico",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/servicos/{{servicoId}}",
+                        "body": {
+                            "raw": "{\"maoDeObra\":275.00,\"pecas\":[{\"id\":\"{{pecaId}}\",\"quantidade\":1}],\"insumos\":[{\"id\":\"{{insumoId}}\",\"quantidade\":1}]}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "22 - Listar Pecas",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/pecas"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "23 - Consultar Peca",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/pecas/{{pecaId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "24 - Atualizar Peca",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/pecas/{{pecaId}}",
+                        "body": {
+                            "raw": "{\"precoUnitario\":130.00,\"descricao\":\"Filtro atualizado {{timestamp}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "25 - Listar Insumos",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/insumos"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "26 - Consultar Insumo",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/insumos/{{insumoId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "27 - Atualizar Insumo",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/insumos/{{insumoId}}",
+                        "body": {
+                            "raw": "{\"precoUnitario\":39.90,\"descricao\":\"Oleo atualizado {{timestamp}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ],
+            "auth": {
+                "bearer": [
+                    {
+                        "key": "token",
+                        "type": "string",
+                        "value": "{{tokenFuncionario}}"
+                    }
+                ],
+                "type": "bearer"
+            }
+        },
+        {
+            "name": "04 - Fluxo OS Preventiva",
+            "item": [
+                {
+                    "name": "01 - Abrir OS Completa",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico",
+                        "body": {
+                            "raw": "{\"cliente\":{\"nome\":\"Joao {{timestamp}}\",\"documento\":\"{{clienteCpf}}\",\"email\":\"{{clienteEmail}}\",\"telefone\":\"11999999999\"},\"veiculo\":{\"placa\":\"{{placa}}\",\"renavam\":\"{{renavam}}\",\"modelo\":{\"descricao\":\"Corolla XEi\",\"marca\":\"Toyota\",\"ano\":2020}},\"itens\":{\"servicos\":[{\"servicoId\":\"{{servicoId}}\"}],\"pecas\":[{\"pecaId\":\"{{pecaId}}\",\"quantidade\":1}],\"insumos\":[{\"insumoId\":\"{{insumoId}}\",\"quantidade\":1}]}}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027ordemServicoPreventivaId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Classificar Como Preventiva",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoPreventivaId}}/classificar",
+                        "body": {
+                            "raw": "{\"tipoManutencao\":\"Preventiva\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Consultar Status",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoPreventivaId}}/status"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "04 - Obter Detalhes E Capturar Orcamento",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoPreventivaId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.orcamento \u0026\u0026 json.orcamento.id, \u0027orcamento.id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027orcamentoPreventivoId\u0027, json.orcamento.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "05 - Obter Orcamento",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/orcamentos/{{orcamentoPreventivoId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "06 - Aprovar Orcamento",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/orcamentos/{{orcamentoPreventivoId}}/aprovar"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "07 - Validar Execucao Iniciada",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoPreventivaId}}/status"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.test(\u0027OS EmExecucao\u0027, () =\u003e pm.expect(json.status).to.eql(\u0027EmExecucao\u0027));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "08 - Finalizar OS",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoPreventivaId}}/finalizar"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "09 - Entregar OS",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoPreventivaId}}/entregar"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ],
+            "auth": {
+                "bearer": [
+                    {
+                        "key": "token",
+                        "type": "string",
+                        "value": "{{tokenFuncionario}}"
+                    }
+                ],
+                "type": "bearer"
+            }
+        },
+        {
+            "name": "05 - Fluxo OS Corretiva",
+            "item": [
+                {
+                    "name": "01 - Abrir OS Completa",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico",
+                        "body": {
+                            "raw": "{\"cliente\":{\"nome\":\"Joao {{timestamp}}\",\"documento\":\"{{clienteCpf}}\",\"email\":\"{{clienteEmail}}\",\"telefone\":\"11999999999\"},\"veiculo\":{\"placa\":\"{{placa}}\",\"renavam\":\"{{renavam}}\",\"modelo\":{\"descricao\":\"Corolla XEi\",\"marca\":\"Toyota\",\"ano\":2020}},\"itens\":{\"servicos\":[{\"servicoId\":\"{{servicoId}}\"}],\"pecas\":[{\"pecaId\":\"{{pecaId}}\",\"quantidade\":1}],\"insumos\":[{\"insumoId\":\"{{insumoId}}\",\"quantidade\":1}]}}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027ordemServicoCorretivaId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Classificar Como Corretiva",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoCorretivaId}}/classificar",
+                        "body": {
+                            "raw": "{\"tipoManutencao\":\"Corretiva\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Registrar Diagnostico",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoCorretivaId}}/diagnostico",
+                        "body": {
+                            "raw": "{\"descricao\":\"Falha identificada no sistema de freio dianteiro.\",\"servicoIds\":[\"{{servicoId}}\"]}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.orcamentoId, \u0027orcamentoId\u0027).to.exist;",
+                                    "pm.environment.set(\u0027orcamentoCorretivoId\u0027, json.orcamentoId);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "04 - Consultar Orcamento",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/orcamentos/{{orcamentoCorretivoId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "05 - Recusar Orcamento",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/orcamentos/{{orcamentoCorretivoId}}/recusar"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "06 - Validar Status Finalizada",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoCorretivaId}}/status"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.test(\u0027OS Finalizada\u0027, () =\u003e pm.expect(json.status).to.eql(\u0027Finalizada\u0027));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ],
+            "auth": {
+                "bearer": [
+                    {
+                        "key": "token",
+                        "type": "string",
+                        "value": "{{tokenFuncionario}}"
+                    }
+                ],
+                "type": "bearer"
+            }
+        },
+        {
+            "name": "06 - Fluxo Cliente",
+            "item": [
+                {
+                    "name": "01 - Criar OS Para Aprovacao Do Cliente",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        },
+                        "body": {
+                            "raw": "{\"cliente\":{\"nome\":\"Joao {{timestamp}}\",\"documento\":\"{{clienteCpf}}\",\"email\":\"{{clienteEmail}}\",\"telefone\":\"11999999999\"},\"veiculo\":{\"placa\":\"{{placa}}\",\"renavam\":\"{{renavam}}\",\"modelo\":{\"descricao\":\"Corolla XEi\",\"marca\":\"Toyota\",\"ano\":2020}},\"itens\":{\"servicos\":[{\"servicoId\":\"{{servicoId}}\"}],\"pecas\":[{\"pecaId\":\"{{pecaId}}\",\"quantidade\":1}],\"insumos\":[{\"insumoId\":\"{{insumoId}}\",\"quantidade\":1}]}}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027ordemServicoClienteId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Classificar OS Do Cliente Como Preventiva",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoClienteId}}/classificar",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        },
+                        "body": {
+                            "raw": "{\"tipoManutencao\":\"Preventiva\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Capturar Orcamento Do Cliente",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoClienteId}}",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.orcamento \u0026\u0026 json.orcamento.id, \u0027orcamento.id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027orcamentoClienteId\u0027, json.orcamento.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "04 - Login Cliente",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/auth/clientes",
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "body": {
+                            "raw": "{\"cpf\":\"{{clienteCpf}}\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.accessToken, \u0027accessToken\u0027).to.be.a(\u0027string\u0027).and.not.empty;",
+                                    "pm.environment.set(\u0027tokenCliente\u0027, json.accessToken);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "05 - Cliente Lista Minhas OS",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/minhas-ordens-servico"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "06 - Cliente Consulta Propria OS",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/minhas-ordens-servico/{{ordemServicoClienteId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "07 - Cliente Consulta Status Da Propria OS",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/minhas-ordens-servico/{{ordemServicoClienteId}}/status"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "08 - Cliente Consulta Proprio Orcamento",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/meus-orcamentos/{{orcamentoClienteId}}"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "09 - Cliente Aprova Proprio Orcamento",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/meus-orcamentos/{{orcamentoClienteId}}/aprovar"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "10 - Validar Execucao Apos Aprovacao Do Cliente",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/minhas-ordens-servico/{{ordemServicoClienteId}}/status"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.test(\u0027OS EmExecucao\u0027, () =\u003e pm.expect(json.status).to.eql(\u0027EmExecucao\u0027));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ],
+            "auth": {
+                "bearer": [
+                    {
+                        "key": "token",
+                        "type": "string",
+                        "value": "{{tokenCliente}}"
+                    }
+                ],
+                "type": "bearer"
+            }
+        },
+        {
+            "name": "07 - Seguranca",
+            "item": [
+                {
+                    "name": "01 - Criar OS De Outro Cliente",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        },
+                        "body": {
+                            "raw": "{\"cliente\":{\"nome\":\"Maria {{timestamp}}\",\"documento\":\"{{outroClienteCpf}}\",\"email\":\"{{outroClienteEmail}}\",\"telefone\":\"11888888888\"},\"veiculo\":{\"placa\":\"{{outraPlaca}}\",\"renavam\":\"{{outroRenavam}}\",\"modelo\":{\"descricao\":\"Civic EXL\",\"marca\":\"Honda\",\"ano\":2019}},\"itens\":{\"servicos\":[{\"servicoId\":\"{{servicoId}}\"}],\"pecas\":[],\"insumos\":[]}}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 201\u0027, () =\u003e pm.response.to.have.status(201));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.id, \u0027id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027ordemServicoOutroClienteId\u0027, json.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "02 - Classificar OS De Outro Cliente",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoOutroClienteId}}/classificar",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        },
+                        "body": {
+                            "raw": "{\"tipoManutencao\":\"Preventiva\"}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            },
+                            "mode": "raw"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 204\u0027, () =\u003e pm.response.to.have.status(204));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "03 - Capturar Orcamento De Outro Cliente",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/ordens-servico/{{ordemServicoOutroClienteId}}",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));",
+                                    "const json = pm.response.json();",
+                                    "pm.expect(json.orcamento \u0026\u0026 json.orcamento.id, \u0027orcamento.id\u0027).to.exist;",
+                                    "pm.environment.set(\u0027orcamentoOutroClienteId\u0027, json.orcamento.id);"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "04 - Cliente Tenta Rota Interna",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenCliente}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "05 - Funcionario Tenta Rota Admin",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/admin/funcionarios",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenFuncionario}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "06 - Sem Token Em Rota Protegida",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/clientes",
+                        "auth": {
+                            "type": "noauth"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 401\u0027, () =\u003e pm.response.to.have.status(401));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "07 - Cliente Tenta OS De Outro Cliente",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/minhas-ordens-servico/{{ordemServicoOutroClienteId}}",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenCliente}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                },
+                {
+                    "name": "08 - Cliente Tenta Orcamento De Outro Cliente",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/meus-orcamentos/{{orcamentoOutroClienteId}}",
+                        "auth": {
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "type": "string",
+                                    "value": "{{tokenCliente}}"
+                                }
+                            ],
+                            "type": "bearer"
+                        }
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 403\u0027, () =\u003e pm.response.to.have.status(403));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "08 - Relatorios",
+            "item": [
+                {
+                    "name": "01 - Tempo Medio De Execucao",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "type": "text",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": "{{baseUrl}}/api/relatorios/tempo-medio-execucao"
+                    },
+                    "response": [
+
+                    ],
+                    "event": [
+                        {
+                            "script": {
+                                "exec": [
+                                    "pm.test(\u0027status 200\u0027, () =\u003e pm.response.to.have.status(200));"
+                                ],
+                                "type": "text/javascript"
+                            },
+                            "listen": "test"
+                        }
+                    ]
+                }
+            ],
+            "auth": {
+                "bearer": [
+                    {
+                        "key": "token",
+                        "type": "string",
+                        "value": "{{tokenFuncionario}}"
+                    }
+                ],
+                "type": "bearer"
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "https://localhost:5001"
+        },
+        {
+            "key": "adminCpf",
+            "value": "00000000000"
+        },
+        {
+            "key": "adminSenha",
+            "value": "Admin@123"
+        },
+        {
+            "key": "tokenAdmin",
+            "value": ""
+        },
+        {
+            "key": "tokenFuncionario",
+            "value": ""
+        },
+        {
+            "key": "tokenCliente",
+            "value": ""
+        },
+        {
+            "key": "timestamp",
+            "value": ""
+        },
+        {
+            "key": "funcionarioId",
+            "value": ""
+        },
+        {
+            "key": "funcionarioCpf",
+            "value": ""
+        },
+        {
+            "key": "funcionarioSenha",
+            "value": ""
+        },
+        {
+            "key": "clienteId",
+            "value": ""
+        },
+        {
+            "key": "clienteCpf",
+            "value": ""
+        },
+        {
+            "key": "outroClienteId",
+            "value": ""
+        },
+        {
+            "key": "outroClienteCpf",
+            "value": ""
+        },
+        {
+            "key": "veiculoId",
+            "value": ""
+        },
+        {
+            "key": "outroVeiculoId",
+            "value": ""
+        },
+        {
+            "key": "placa",
+            "value": ""
+        },
+        {
+            "key": "outraPlaca",
+            "value": ""
+        },
+        {
+            "key": "renavam",
+            "value": ""
+        },
+        {
+            "key": "outroRenavam",
+            "value": ""
+        },
+        {
+            "key": "servicoId",
+            "value": ""
+        },
+        {
+            "key": "pecaId",
+            "value": ""
+        },
+        {
+            "key": "insumoId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoPreventivaId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoCorretivaId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoClienteId",
+            "value": ""
+        },
+        {
+            "key": "ordemServicoOutroClienteId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoPreventivoId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoCorretivoId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoClienteId",
+            "value": ""
+        },
+        {
+            "key": "orcamentoOutroClienteId",
+            "value": ""
+        },
+        {
+            "key": "clienteEmail",
+            "value": ""
+        },
+        {
+            "key": "outroClienteEmail",
+            "value": ""
+        }
+    ]
+}
