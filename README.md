@@ -1,5 +1,7 @@
 # Oficina API - Tech Challenge FIAP | Fase 3
 
+![Coverage](.github/badges/coverage.svg)
+
 API REST em .NET 10 para gestão de oficina mecânica. O repositório concentra API, regras de negócio, persistência, autenticação local, envio de e-mail em ambiente de desenvolvimento e testes automatizados.
 
 ## Visão Geral
@@ -32,7 +34,7 @@ O SDK esperado está fixado em `global.json`, que também é usado pelo workflow
 
 ## Configuração
 
-Crie o arquivo local de variáveis:
+Crie ou recrie o arquivo local de variáveis:
 
 ```powershell
 Copy-Item docker/.env.example docker/.env
@@ -120,6 +122,18 @@ Resposta esperada:
 }
 ```
 
+## E-mail Local
+
+No Docker, a API envia e-mails para o smtp4dev usando `smtp4dev:25` com SSL desligado. O Compose já configura:
+
+```text
+EmailSettings__SmtpHost=smtp4dev
+EmailSettings__SmtpPort=25
+EmailSettings__EnableSsl=false
+```
+
+Para validar, execute um fluxo que gera orçamento para cliente com e-mail preenchido e acesse `http://localhost:5000`. Se a mensagem não aparecer, confira os logs da API; eles indicam se faltou token, OS, veículo, cliente, e-mail ou se houve falha SMTP.
+
 ## Migrations
 
 A API executa migrations no startup somente quando `RUN_MIGRATION=true`. O EF Core aplica migrations pendentes no sentido `Up`; ele não executa os métodos `Down`.
@@ -166,10 +180,6 @@ Admin ou funcionário:
 
 Use o token retornado como `Bearer` no Swagger ou Postman. As rotas completas da API ficam disponíveis no Swagger.
 
-## E-mail Local
-
-O smtp4dev captura os e-mails enviados pela API em desenvolvimento. Acesse `http://localhost:5000` para validar mensagens e links de aprovação/recusa de orçamento.
-
 ## Postman
 
 Arquivos disponíveis:
@@ -182,7 +192,7 @@ postman/OficinaAPI-seguranca.postman_collection.json
 
 Importe a collection e o environment, confirme `baseUrl=http://localhost:8080` e execute os cenários pelo Collection Runner.
 
-## Testes e Validação
+## Testes e Cobertura
 
 Restaurar e compilar:
 
@@ -196,6 +206,14 @@ Executar testes:
 ```powershell
 dotnet test Oficina.sln --configuration Release --no-build
 ```
+
+Executar testes com cobertura:
+
+```powershell
+dotnet test Oficina.sln --collect:"XPlat Code Coverage"
+```
+
+## Validação Docker
 
 Validar configuração Docker local:
 
