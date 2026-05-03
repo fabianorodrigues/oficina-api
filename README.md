@@ -2,166 +2,133 @@
 
 ![Coverage](.github/badges/badge_combined.svg)
 
-API REST em .NET 10 para gestão de oficina mecânica. O repositório concentra API, regras de negócio, persistência, autenticação local, envio de e-mail em ambiente de desenvolvimento e testes automatizados.
+## Visão geral
 
-## Visão Geral
+API REST em .NET 10 para gestão de oficina mecânica. A aplicação é responsável por clientes, veículos, serviços, peças, estoque, ordens de serviço, diagnóstico, orçamento, aprovação/recusa e autenticação JWT.
 
-- Cadastro e manutenção de clientes e veículos.
-- Gestão de serviços, peças, insumos e estoque.
-- Abertura, classificação e acompanhamento de ordens de serviço.
-- Registro de diagnóstico, geração de orçamento e aprovação/recusa.
-- Autenticação JWT por CPF para clientes, funcionários e admins.
-- Envio local de e-mails pelo smtp4dev para validar fluxos de orçamento.
+Nesta fase, a API gera uma imagem Docker para publicação no Amazon ECR. As migrations são executadas de forma dedicada com `APP_MODE=migration`.
 
-## Arquitetura e Tecnologias
+## Tecnologias
 
-| Projeto | Responsabilidade |
+- .NET 10
+- ASP.NET Core
+- Entity Framework Core
+- SQL Server
+- JWT Bearer
+- FluentValidation
+- MailKit
+- Swagger/OpenAPI
+- Docker Compose
+- xUnit, Moq e Coverlet
+
+## Relação com os outros repositórios
+
+| Repositório | Responsabilidade |
 |---|---|
-| `Oficina.Api` | Controllers, autenticação, autorização, Swagger, healthcheck e middleware de erro |
-| `Oficina.Application` | Casos de uso, contratos, validações e modelos de aplicação |
-| `Oficina.Domain` | Entidades, value objects, enums e regras de negócio |
-| `Oficina.Infrastructure` | EF Core, repositórios, SQL Server e integrações externas |
-| `Oficina.Tests` | Testes de domínio, aplicação, API, segurança e infraestrutura |
-
-Principais tecnologias: .NET 10, ASP.NET Core, Entity Framework Core, SQL Server, JWT Bearer, FluentValidation, MailKit, smtp4dev, Swagger/OpenAPI, Docker Compose, xUnit, Moq e Coverlet.
+| `oficina-api` | API, domínio, EF Core, migrations, Docker e testes |
+| `oficina-infra-db` | RDS SQL Server, VPC, subnets e security groups |
+| `oficina-auth-lambda` | Lambda Auth por CPF e Lambda Authorizer JWT |
+| `oficina-infra-k8s` | ECR, EKS, Kubernetes e API Gateway |
 
 ## Pré-requisitos
 
 - Docker Desktop.
-- .NET SDK 10 para comandos locais de `dotnet`.
+- .NET SDK 10.
+- AWS CLI, somente para publicação e validação de imagens no ECR.
 
-O SDK esperado está fixado em `global.json`, que também é usado pelo workflow de CI.
+O SDK esperado está definido em `global.json`.
 
-## Configuração
+## Publicação da imagem no ECR
 
-Crie ou recrie o arquivo local de variáveis:
+O ECR é criado no repositório `oficina-infra-k8s`. O output `ecr_repository_url` deve ser cadastrado como secret `ECR_REPOSITORY_URL` neste repositório.
 
-```powershell
-Copy-Item docker/.env.example docker/.env
-```
+O workflow `docker-build-push` apenas builda e publica a imagem da API. Ele não executa Docker Compose, API, SQL Server, smtp4dev ou migrations.
 
-O Compose monta a connection string da API a partir das variáveis `SQLSERVER_*`.
+Secrets obrigatórios no GitHub:
 
-| Variável | Uso |
+| Secret | Descrição |
 |---|---|
-| `SQLSERVER_HOST` | Host do SQL Server. Use `sqlserver` para container local ou endpoint do RDS |
-| `SQLSERVER_PORT` | Porta do SQL Server, normalmente `1433` |
-| `SQLSERVER_DATABASE` | Nome do banco |
-| `SQLSERVER_USER` | Usuário do banco |
-| `SQLSERVER_PASSWORD` | Senha do banco |
-| `SQLSERVER_ENCRYPT` | `False` no local; normalmente `True` para RDS |
-| `SQLSERVER_TRUST_SERVER_CERTIFICATE` | `True` para desenvolvimento/local |
-| `RUN_MIGRATION` | Quando `true`, aplica migrations ao subir a API |
-| `API_HTTP_PORT` | Porta local da API |
-| `SMTP4DEV_WEB_PORT` | Porta local da interface web do smtp4dev |
-| `JWT_SECRET` | Chave usada para assinar tokens JWT |
-| `ADMIN_INICIAL_*` | Dados do admin inicial criado em desenvolvimento |
+| `AWS_ACCESS_KEY_ID` | Access Key da AWS |
+| `AWS_SECRET_ACCESS_KEY` | Secret Key da AWS |
+| `AWS_SESSION_TOKEN` | Token temporário da AWS Academy |
+| `AWS_REGION` | Região AWS, exemplo `us-east-1` |
+| `ECR_REPOSITORY_URL` | URL completa do ECR criada pelo `oficina-infra-k8s` |
 
-Não commite credenciais reais no `.env`.
-
-## Como Rodar
-
-### Local Completo
-
-Use este modo para subir API, SQL Server em container e smtp4dev:
-
-```powershell
-docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up --build
-```
-
-No `docker/.env`, mantenha:
+Como executar:
 
 ```text
-SQLSERVER_HOST=sqlserver
-SQLSERVER_USER=sa
-RUN_MIGRATION=true
+GitHub Actions > docker-build-push > Run workflow
 ```
 
-### Banco Externo ou RDS
+Tags publicadas:
 
-Use este modo para subir API e smtp4dev localmente, apontando a API para um SQL Server externo:
+- `<commit-sha>`;
+- `demo-latest`.
 
-```powershell
-docker compose --env-file docker/.env -f docker/docker-compose.yml up --build api smtp4dev
-```
+## Validação da publicação no ECR
 
-Exemplo de variáveis para RDS SQL Server:
+Validação pelo console AWS:
 
 ```text
-SQLSERVER_HOST=meu-rds.xxxxxx.us-east-1.rds.amazonaws.com
-SQLSERVER_PORT=1433
-SQLSERVER_DATABASE=OficinaDb
-SQLSERVER_USER=admin
-SQLSERVER_PASSWORD=SUA_SENHA
-SQLSERVER_ENCRYPT=True
-SQLSERVER_TRUST_SERVER_CERTIFICATE=True
-RUN_MIGRATION=false
+ECR > Private repositories > oficina-api > Images
 ```
 
-Antes de usar RDS, confirme que o Security Group/firewall permite conexão na porta `1433` a partir da máquina que roda Docker.
+Validação opcional pela AWS CLI:
 
-### Acessos
+```powershell
+aws ecr describe-images --repository-name oficina-api --image-ids imageTag=demo-latest --region us-east-1
+```
 
-| Recurso | URL |
-|---|---|
-| Swagger | `http://localhost:8080/swagger` |
-| Healthcheck | `http://localhost:8080/health` |
-| smtp4dev | `http://localhost:5000` |
+## Testar imagem publicada localmente
 
-Valide a API:
+Faça login no ECR:
+
+```powershell
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+```
+
+No `docker/.env`, configure a imagem publicada:
+
+```text
+API_IMAGE_REPOSITORY=<ECR_REPOSITORY_URL>
+API_IMAGE_TAG=demo-latest
+```
+
+Suba o banco e o smtp4dev:
+
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d sqlserver smtp4dev
+```
+
+Puxe a imagem publicada:
+
+```powershell
+docker compose --env-file docker/.env -f docker/docker-compose.yml pull api
+```
+
+Execute as migrations:
+
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml run --rm --pull never migration
+```
+
+Suba a API usando a imagem publicada:
+
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d --no-build api
+```
+
+Valide:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/health
 ```
 
-Resposta esperada:
+## Autenticação e Postman
 
-```json
-{
-  "status": "Healthy"
-}
-```
+A rota pública de login é `POST /api/auth/cpf`.
 
-## E-mail Local
-
-No Docker, a API envia e-mails para o smtp4dev usando `smtp4dev:25` com SSL desligado. O Compose já configura:
-
-```text
-EmailSettings__SmtpHost=smtp4dev
-EmailSettings__SmtpPort=25
-EmailSettings__EnableSsl=false
-```
-
-Para validar, execute um fluxo que gera orçamento para cliente com e-mail preenchido e acesse `http://localhost:5000`. Se a mensagem não aparecer, confira os logs da API; eles indicam se faltou token, OS, veículo, cliente, e-mail ou se houve falha SMTP.
-
-## Migrations
-
-A API executa migrations no startup somente quando `RUN_MIGRATION=true`. O EF Core aplica migrations pendentes no sentido `Up`; ele não executa os métodos `Down`.
-
-Para RDS ou banco com dados existentes:
-
-1. Tire snapshot ou backup do banco.
-2. Comece com `RUN_MIGRATION=false`.
-3. Gere e revise o script idempotente:
-
-```powershell
-dotnet ef migrations script --idempotent --project src/Oficina.Infrastructure --startup-project src/Oficina.Api --output artifacts/rds-migration.sql
-```
-
-4. Aplique migrations de forma controlada com `RUN_MIGRATION=true`.
-5. Depois de validar, volte `RUN_MIGRATION=false`.
-
-Depois da aplicação, confira a tabela `__EFMigrationsHistory`.
-
-## Autenticação
-
-A rota pública de login é:
-
-| Método | Endpoint | Descrição |
-|---|---|---|
-| POST | `/api/auth/cpf` | Autentica cliente, funcionário ou admin por CPF |
-
-Cliente:
+Payload para cliente:
 
 ```json
 {
@@ -169,7 +136,7 @@ Cliente:
 }
 ```
 
-Admin ou funcionário:
+Payload para funcionário ou admin:
 
 ```json
 {
@@ -178,11 +145,9 @@ Admin ou funcionário:
 }
 ```
 
-Use o token retornado como `Bearer` no Swagger ou Postman. As rotas completas da API ficam disponíveis no Swagger.
+Use o token retornado como `Bearer` no Swagger ou no Postman.
 
-## Postman
-
-Arquivos disponíveis:
+Collections disponíveis:
 
 ```text
 postman/OficinaAPI-cenarios.postman_collection.json
@@ -192,12 +157,32 @@ postman/OficinaAPI-seguranca.postman_collection.json
 
 Importe a collection e o environment, confirme `baseUrl=http://localhost:8080` e execute os cenários pelo Collection Runner.
 
-## Testes e Cobertura
+## E-mail
 
-Restaurar e compilar:
+Localmente, a API usa smtp4dev. Em cloud, um SMTP real pode ser configurado por variáveis de ambiente, ConfigMap ou Secret.
+
+SMTP não é obrigatório neste estágio. Se o envio falhar, a falha é logada e a operação principal continua. `EmailSettings__BaseUrlAprovaRecusaOrcamento` deve apontar para a URL pública da API quando estiver em cloud.
+
+Exemplo mínimo:
+
+```text
+EmailSettings__SmtpHost=<smtp-host>
+EmailSettings__SmtpPort=<smtp-port>
+EmailSettings__From=<remetente>
+EmailSettings__BaseUrlAprovaRecusaOrcamento=<url-publica>
+```
+
+## Testes
+
+Restaurar dependências:
 
 ```powershell
 dotnet restore Oficina.sln
+```
+
+Compilar:
+
+```powershell
 dotnet build Oficina.sln --configuration Release --no-restore
 ```
 
@@ -213,22 +198,71 @@ Executar testes com cobertura:
 dotnet test Oficina.sln --collect:"XPlat Code Coverage"
 ```
 
-## Validação Docker
+##
+## Configurações e Execuções Local da API
 
-Validar configuração Docker local:
-
-```powershell
-docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml config
-```
-
-Validar configuração Docker para banco externo/RDS:
+Crie o arquivo local de variáveis:
 
 ```powershell
-docker compose --env-file docker/.env -f docker/docker-compose.yml config
+Copy-Item docker/.env.example docker/.env
 ```
 
-Validar build da imagem:
+O arquivo `docker/.env` configura SQL Server, API, JWT, e-mail local e admin inicial. Para execução local padrão, os valores de `docker/.env.example` já servem como base.
+
+Grupos principais de configuração:
+
+- `SQLSERVER_*`: conexão com SQL Server local ou RDS.
+- `JWT_*`: geração e validação de tokens.
+- `EMAIL_*`: remetente e SMTP local/cloud.
+- `ADMIN_INICIAL_*`: admin inicial de desenvolvimento.
+- `API_*`: porta e imagem usada pelo Docker Compose.
+
+## Execução local com Docker
+
+Suba o SQL Server e o smtp4dev:
 
 ```powershell
-docker compose --env-file docker/.env -f docker/docker-compose.yml build api
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d sqlserver smtp4dev
 ```
+
+Execute as migrations:
+
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml run --rm migration
+```
+
+Suba a API:
+
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d api
+```
+
+O serviço `migration` usa `APP_MODE=migration` e encerra após aplicar as migrations. A API normal não aplica migrations automaticamente. O smtp4dev é usado apenas para desenvolvimento local.
+
+## Execução local com dotnet
+
+Rodar a API:
+
+```powershell
+dotnet run --project src/Oficina.Api/Oficina.Api.csproj
+```
+
+Executar migrations:
+
+```powershell
+$env:APP_MODE="migration"; dotnet run --project src/Oficina.Api/Oficina.Api.csproj
+```
+
+Limpar a variável:
+
+```powershell
+Remove-Item Env:APP_MODE
+```
+
+## Validação local
+
+| Recurso | URL |
+|---|---|
+| Swagger | `http://localhost:8080/swagger` |
+| Healthcheck | `http://localhost:8080/health` |
+| smtp4dev | `http://localhost:5000` |

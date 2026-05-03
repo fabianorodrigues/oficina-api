@@ -14,6 +14,29 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddInfrastructure(builder.Configuration);
+
+if (string.Equals(builder.Configuration["APP_MODE"], "migration", StringComparison.OrdinalIgnoreCase))
+{
+    var migrationApp = builder.Build();
+
+    try
+    {
+        using var scope = migrationApp.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<OficinaDbContext>();
+
+        await dbContext.Database.MigrateAsync();
+        Console.WriteLine("Migrations aplicadas com sucesso.");
+        return;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Falha ao aplicar migrations: {ex.GetType().Name}.");
+        Environment.ExitCode = 1;
+        return;
+    }
+}
+
 builder.Services.AddScoped<FluentValidationActionFilter>();
 
 builder.Services.AddControllers(opt =>
@@ -51,7 +74,6 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddApplication();
-builder.Services.AddInfrastructure(builder.Configuration);
 
 builder.Services.AddHttpContextAccessor();
 
@@ -114,9 +136,7 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
-var runMigration = builder.Configuration.GetValue<bool>("RUN_MIGRATION");
-
-await ExecutarInicializacaoBancoComRetry(app, runMigration);
+await ExecutarInicializacaoBancoComRetry(app);
 
 app.UseSwagger(options =>
 {
@@ -143,7 +163,7 @@ app.MapControllers();
 
 app.Run();
 
-static async Task ExecutarInicializacaoBancoComRetry(WebApplication app, bool runMigration)
+static async Task ExecutarInicializacaoBancoComRetry(WebApplication app)
 {
     const int maxTentativas = 12;
     var intervalo = TimeSpan.FromSeconds(5);
@@ -152,15 +172,6 @@ static async Task ExecutarInicializacaoBancoComRetry(WebApplication app, bool ru
     {
         try
         {
-            if (runMigration)
-            {
-                using var scope = app.Services.CreateScope();
-
-                var dbContext = scope.ServiceProvider.GetRequiredService<OficinaDbContext>();
-
-                await dbContext.Database.MigrateAsync();
-            }
-
             await AdminInicialBootstrapper.GarantirAdminInicial(app);
 
             return;

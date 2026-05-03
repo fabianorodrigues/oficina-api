@@ -7,6 +7,7 @@ using Oficina.Domain.Cadastro;
 using Oficina.Domain.Cadastro.ValueObjects;
 using Oficina.Domain.Oficina;
 using Oficina.Infrastructure.Email.Configurations;
+using Oficina.Infrastructure.Email.Providers;
 using Oficina.Infrastructure.Notificacoes;
 using Xunit;
 
@@ -165,5 +166,50 @@ public class NotificadorClienteTests
         await notificador.NotificarOrcamentoCriado(orcamento.Id, os.Id, CancellationToken.None);
 
         emailSender.Verify(x => x.Enviar(It.IsAny<EmailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task NotificarOrcamentoCriado_QuandoSmtpEstiverParcial_NaoDevePropagarErro()
+    {
+        var oficinaRepo = new Mock<IOficinaRepository>();
+        var cadastroRepo = new Mock<ICadastroRepository>();
+        var options = Options.Create(new EmailSettings
+        {
+            BaseUrlAprovaRecusaOrcamento = "http://localhost:8080",
+            From = "no-reply@oficina.local",
+            SmtpHost = "localhost",
+            SmtpPort = 25,
+            Username = "usuario"
+        });
+        var emailSender = new MailKitEmailSender(options, Mock.Of<ILogger<MailKitEmailSender>>());
+
+        var os = OrdemServico.CriarPreventiva(Guid.NewGuid(), [Guid.NewGuid()]);
+        var orcamento = new Orcamento(os.Id, 500);
+        orcamento.DefinirTokenAcaoExterna("TOKEN_EMAIL", DateTimeOffset.UtcNow.AddDays(1));
+        os.VincularOrcamento(orcamento.Id);
+
+        var cliente = new Cliente(
+            new DocumentoCpfCnpj("52998224725"),
+            "Joao Cliente",
+            new Contato("cliente@teste.com", "11999999999"));
+        var veiculo = new Veiculo(
+            cliente.Id,
+            new Placa("ABC1234"),
+            new Renavam("12345678901"),
+            new Modelo("Gol", "VW", 2020));
+
+        oficinaRepo.Setup(x => x.ObterOrcamento(orcamento.Id, It.IsAny<CancellationToken>())).ReturnsAsync(orcamento);
+        oficinaRepo.Setup(x => x.ObterOrdemServico(os.Id, It.IsAny<CancellationToken>())).ReturnsAsync(os);
+        cadastroRepo.Setup(x => x.ObterVeiculo(os.VeiculoId, It.IsAny<CancellationToken>())).ReturnsAsync(veiculo);
+        cadastroRepo.Setup(x => x.ObterCliente(cliente.Id, It.IsAny<CancellationToken>())).ReturnsAsync(cliente);
+
+        var notificador = new NotificadorCliente(
+            Mock.Of<ILogger<NotificadorCliente>>(),
+            oficinaRepo.Object,
+            cadastroRepo.Object,
+            emailSender,
+            options);
+
+        await notificador.NotificarOrcamentoCriado(orcamento.Id, os.Id, CancellationToken.None);
     }
 }
