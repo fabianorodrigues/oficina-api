@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -40,23 +40,68 @@ jobs:
       - name: Build solution
         run: dotnet build Oficina.sln --configuration Release --no-restore
 
+      - name: Archive build outputs
+        run: tar -czf build-outputs.tar.gz src/*/bin/Release src/*/obj tests/*/bin/Release tests/*/obj
+
+      - name: Upload build outputs
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-outputs
+          path: build-outputs.tar.gz
+          retention-days: 1
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Download build outputs
+        uses: actions/download-artifact@v6
+        with:
+          name: build-outputs
+          path: .
+
+      - name: Extract build outputs
+        run: tar -xzf build-outputs.tar.gz
+
       - name: Test solution
         run: dotnet test Oficina.sln --configuration Release --no-build
 
       - name: Test coverage
+        continue-on-error: true
         run: dotnet test Oficina.sln --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
 
       - name: Install ReportGenerator
+        continue-on-error: true
         run: dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Add .NET tools to PATH
+        continue-on-error: true
         run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
       - name: Generate coverage report
+        continue-on-error: true
         run: reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:"HtmlInline;Cobertura;Badges"
 
       - name: Upload coverage report
+        if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: coverage-report
+          if-no-files-found: ignore
