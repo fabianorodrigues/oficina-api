@@ -54,7 +54,7 @@ public class NotificadorCliente : INotificadorCliente
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Falha ao enviar e-mail do orcamento {OrcamentoId} para {EmailCliente}. A acao principal foi preservada.", orcamentoId, contexto.Value.emailCliente);
+            _logger.LogError(ex, "Falha ao enviar e-mail do orcamento {OrcamentoId} e OS {OrdemServicoId}. A acao principal foi preservada.", orcamentoId, ordemServicoId);
             return;
         }
 

@@ -21,6 +21,8 @@ public class MailKitEmailSender : IEmailSender
 
     public async Task Enviar(EmailMessage message, CancellationToken ct)
     {
+        ValidarAutenticacaoSmtp();
+
         var email = new MimeMessage();
         email.From.Add(ValidarEndereco(_settings.From, "remetente"));
         email.To.Add(ValidarEndereco(message.To, "destinatario"));
@@ -30,10 +32,27 @@ public class MailKitEmailSender : IEmailSender
         using var client = new SmtpClient();
         var socketOptions = _settings.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None;
         await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, socketOptions, ct);
+
+        if (!string.IsNullOrWhiteSpace(_settings.Username) && !string.IsNullOrWhiteSpace(_settings.Password))
+        {
+            await client.AuthenticateAsync(_settings.Username, _settings.Password, ct);
+        }
+
         await client.SendAsync(email, ct);
         await client.DisconnectAsync(true, ct);
 
-        _logger.LogInformation("E-mail enviado para {EmailTo} via SMTP {SmtpHost}:{SmtpPort}.", message.To, _settings.SmtpHost, _settings.SmtpPort);
+        _logger.LogInformation("E-mail enviado com sucesso.");
+    }
+
+    private void ValidarAutenticacaoSmtp()
+    {
+        var temUsuario = !string.IsNullOrWhiteSpace(_settings.Username);
+        var temSenha = !string.IsNullOrWhiteSpace(_settings.Password);
+
+        if (temUsuario != temSenha)
+        {
+            throw new InvalidOperationException("Configuracao SMTP invalida: usuario e senha devem ser informados juntos.");
+        }
     }
 
     private MailboxAddress ValidarEndereco(string endereco, string contexto)

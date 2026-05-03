@@ -18,7 +18,6 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
     {
         var cs = config.GetConnectionString("SqlServer");
-        Console.WriteLine($"ConnectionString usada: {cs}");
         services.AddDbContext<OficinaDbContext>(opt =>
             opt.UseSqlServer(cs, sql => sql.EnableRetryOnFailure()));
 
@@ -26,6 +25,8 @@ public static class DependencyInjection
         {
             opt.SmtpHost = config["EmailSettings:SmtpHost"] ?? opt.SmtpHost;
             opt.From = config["EmailSettings:From"] ?? opt.From;
+            opt.Username = config["EmailSettings:Username"];
+            opt.Password = config["EmailSettings:Password"];
             opt.BaseUrlSmtp = config["EmailSettings:BaseUrlSmtp"] ?? opt.BaseUrlSmtp;
             opt.BaseUrlAprovaRecusaOrcamento = config["EmailSettings:BaseUrlAprovaRecusaOrcamento"] ?? opt.BaseUrlAprovaRecusaOrcamento;
 
