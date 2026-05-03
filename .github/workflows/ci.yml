@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -40,23 +40,30 @@ jobs:
       - name: Build solution
         run: dotnet build Oficina.sln --configuration Release --no-restore
 
-      - name: Test solution
-        run: dotnet test Oficina.sln --configuration Release --no-build
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
 
-      - name: Test coverage
-        run: dotnet test Oficina.sln --configuration Release --no-build --collect:"XPlat Code Coverage" --results-directory TestResults
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - name: Install ReportGenerator
-        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-      - name: Add .NET tools to PATH
-        run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
-
-      - name: Generate coverage report
-        run: reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:"HtmlInline;Cobertura;Badges"
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v6
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
         with:
-          name: coverage-report
-          path: coverage-report
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Oficina.sln
+
+      - name: Build solution
+        run: dotnet build Oficina.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/Oficina.Tests/Oficina.Tests.csproj --configuration Release --no-build
