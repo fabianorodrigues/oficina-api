@@ -22,6 +22,7 @@ jobs:
       AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
       ECR_REPOSITORY_URL: ${{ secrets.ECR_REPOSITORY_URL }}
+      IMAGE_ALIAS_TAG: ${{ vars.IMAGE_ALIAS_TAG || 'demo-latest' }}
 
     steps:
       - name: Checkout repository
@@ -57,6 +58,11 @@ jobs:
             exit 1
           fi
 
+          if [[ ! "${IMAGE_ALIAS_TAG}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "IMAGE_ALIAS_TAG must be a valid Docker image tag."
+            exit 1
+          fi
+
           echo "ECR_REPOSITORY_NAME=${ECR_REPOSITORY_URL##*/}" >> "${GITHUB_ENV}"
           echo "ECR_REGISTRY_URL=${ECR_REPOSITORY_URL%/*}" >> "${GITHUB_ENV}"
 
@@ -82,7 +88,7 @@ jobs:
           docker build \
             -f docker/Dockerfile \
             -t "${ECR_REPOSITORY_URL}:${GITHUB_SHA}" \
-            -t "${ECR_REPOSITORY_URL}:demo-latest" \
+            -t "${ECR_REPOSITORY_URL}:${IMAGE_ALIAS_TAG}" \
             .
 
       - name: Check immutable SHA tag
@@ -115,11 +121,11 @@ jobs:
           set -euo pipefail
           docker push "${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
 
-      - name: Push demo-latest tag
+      - name: Push image alias tag
         shell: bash
         run: |
           set -euo pipefail
-          docker push "${ECR_REPOSITORY_URL}:demo-latest"
+          docker push "${ECR_REPOSITORY_URL}:${IMAGE_ALIAS_TAG}"
 
       - name: Validate published tags
         shell: bash
@@ -133,7 +139,7 @@ jobs:
 
           aws ecr describe-images \
             --repository-name "${ECR_REPOSITORY_NAME}" \
-            --image-ids imageTag="demo-latest" \
+            --image-ids imageTag="${IMAGE_ALIAS_TAG}" \
             --region "${AWS_REGION}" >/dev/null
 
-          echo "ECR tags validated: commit SHA and demo-latest."
+          echo "ECR tags validated: commit SHA and ${IMAGE_ALIAS_TAG}."

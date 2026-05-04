@@ -54,6 +54,14 @@ Secrets obrigatórios no GitHub:
 | `AWS_REGION` | Região AWS, exemplo `us-east-1` |
 | `ECR_REPOSITORY_URL` | URL completa do ECR criada pelo `oficina-infra-k8s` |
 
+Variáveis opcionais no GitHub:
+
+| Variável | Descrição | Padrão |
+|---|---|---|
+| `IMAGE_ALIAS_TAG` | Tag mutável usada como alias da imagem mais recente de demonstração | `demo-latest` |
+
+Se `IMAGE_ALIAS_TAG` for alterada, configure o mesmo valor em `ecr_mutable_alias_tag` no repositório `oficina-infra-k8s`.
+
 Como executar:
 
 ```text
@@ -63,7 +71,7 @@ GitHub Actions > docker-build-push > Run workflow
 Tags publicadas:
 
 - `<commit-sha>`;
-- `demo-latest`.
+- valor de `IMAGE_ALIAS_TAG`, com padrão `demo-latest`.
 
 ## Validação da publicação no ECR
 
@@ -93,6 +101,8 @@ No `docker/.env`, configure a imagem publicada:
 API_IMAGE_REPOSITORY=<ECR_REPOSITORY_URL>
 API_IMAGE_TAG=demo-latest
 ```
+
+Se a variável `IMAGE_ALIAS_TAG` tiver outro valor no GitHub, use o mesmo valor em `API_IMAGE_TAG`.
 
 Suba o banco e o smtp4dev:
 
@@ -162,6 +172,16 @@ Importe a collection e o environment, confirme `baseUrl=http://localhost:8080` e
 Localmente, a API usa smtp4dev. Em cloud, um SMTP real pode ser configurado por variáveis de ambiente, ConfigMap ou Secret.
 
 SMTP não é obrigatório neste estágio. Se o envio falhar, a falha é logada e a operação principal continua. `EmailSettings__BaseUrlAprovaRecusaOrcamento` deve apontar para a URL pública da API quando estiver em cloud.
+
+No Docker Compose local, o smtp4dev continua como padrão, mas pode ser sobrescrito no `docker/.env`:
+
+```text
+EMAIL_SMTP_HOST=<smtp-host>
+EMAIL_SMTP_PORT=<smtp-port>
+EMAIL_SMTP_ENABLE_SSL=<true-ou-false>
+EMAIL_BASE_URL_SMTP=<url-smtp4dev-ou-monitoramento>
+EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO=<url-publica-da-api>
+```
 
 Exemplo mínimo:
 
