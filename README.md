@@ -142,7 +142,7 @@ Payload para cliente:
 
 ```json
 {
-  "cpf": "52998224725"
+  "cpf": "<cpf-cliente>"
 }
 ```
 
@@ -150,8 +150,8 @@ Payload para funcionário ou admin:
 
 ```json
 {
-  "cpf": "39053344705",
-  "senha": "Senha@123"
+  "cpf": "<cpf-funcionario-ou-admin>",
+  "senha": "<senha>"
 }
 ```
 
