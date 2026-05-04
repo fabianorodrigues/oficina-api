@@ -57,14 +57,14 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE:-Oficina.Api}
       Jwt__ExpirationMinutes: ${JWT_EXPIRATION_MINUTES:-120}
       Jwt__ExpMinutes: ${JWT_EXPIRATION_MINUTES:-120}
-      EmailSettings__SmtpHost: "smtp4dev"
-      EmailSettings__SmtpPort: "25"
-      EmailSettings__EnableSsl: "false"
+      EmailSettings__SmtpHost: ${EMAIL_SMTP_HOST:-smtp4dev}
+      EmailSettings__SmtpPort: ${EMAIL_SMTP_PORT:-25}
+      EmailSettings__EnableSsl: ${EMAIL_SMTP_ENABLE_SSL:-false}
       EmailSettings__From: ${EMAIL_FROM:-no-reply@oficina.local}
       EmailSettings__Username: ${EMAIL_SMTP_USERNAME:-}
       EmailSettings__Password: ${EMAIL_SMTP_PASSWORD:-}
-      EmailSettings__BaseUrlSmtp: "http://localhost:${SMTP4DEV_WEB_PORT:-5000}"
-      EmailSettings__BaseUrlAprovaRecusaOrcamento: "http://localhost:${API_HTTP_PORT:-8080}"
+      EmailSettings__BaseUrlSmtp: ${EMAIL_BASE_URL_SMTP:-http://localhost:${SMTP4DEV_WEB_PORT:-5000}}
+      EmailSettings__BaseUrlAprovaRecusaOrcamento: ${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-http://localhost:${API_HTTP_PORT:-8080}}
       AdminInicial__Enabled: ${ADMIN_INICIAL_ENABLED:-true}
       AdminInicial__Nome: ${ADMIN_INICIAL_NOME:-Admin Local}
       AdminInicial__Cpf: ${ADMIN_INICIAL_CPF:-39053344705}
@@ -89,18 +89,20 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: oficina-api-migration
+    profiles:
+      - local-db
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       APP_MODE: migration
       ConnectionStrings__SqlServer: "Server=${SQLSERVER_HOST:-sqlserver},${SQLSERVER_PORT:-1433};Database=${SQLSERVER_DATABASE:-OficinaDb};User Id=${SQLSERVER_USER:-sa};Password=${SQLSERVER_PASSWORD:-Oficina_dev_2026!};Encrypt=${SQLSERVER_ENCRYPT:-False};TrustServerCertificate=${SQLSERVER_TRUST_SERVER_CERTIFICATE:-True};"
-      EmailSettings__SmtpHost: "smtp4dev"
-      EmailSettings__SmtpPort: "25"
-      EmailSettings__EnableSsl: "false"
+      EmailSettings__SmtpHost: ${EMAIL_SMTP_HOST:-smtp4dev}
+      EmailSettings__SmtpPort: ${EMAIL_SMTP_PORT:-25}
+      EmailSettings__EnableSsl: ${EMAIL_SMTP_ENABLE_SSL:-false}
       EmailSettings__From: ${EMAIL_FROM:-no-reply@oficina.local}
       EmailSettings__Username: ${EMAIL_SMTP_USERNAME:-}
       EmailSettings__Password: ${EMAIL_SMTP_PASSWORD:-}
-      EmailSettings__BaseUrlSmtp: "http://localhost:${SMTP4DEV_WEB_PORT:-5000}"
-      EmailSettings__BaseUrlAprovaRecusaOrcamento: "http://localhost:${API_HTTP_PORT:-8080}"
+      EmailSettings__BaseUrlSmtp: ${EMAIL_BASE_URL_SMTP:-http://localhost:${SMTP4DEV_WEB_PORT:-5000}}
+      EmailSettings__BaseUrlAprovaRecusaOrcamento: ${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-http://localhost:${API_HTTP_PORT:-8080}}
     depends_on:
       sqlserver:
         condition: service_healthy
