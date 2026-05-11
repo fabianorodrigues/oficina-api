@@ -70,9 +70,14 @@ jobs:
             JWT_EXPIRATION_MINUTES
           )
 
+          is_blank() {
+            local value="${1:-}"
+            [ -z "${value//[[:space:]]/}" ]
+          }
+
           missing=0
           for var_name in "${required_vars[@]}"; do
-            if [ -z "${!var_name:-}" ]; then
+            if is_blank "${!var_name:-}"; then
               echo "${var_name} is required."
               missing=1
             fi
@@ -107,8 +112,18 @@ jobs:
             exit 1
           fi
 
+          if [ "${#JWT_SECRET}" -lt 32 ]; then
+            echo "JWT_SECRET must be at least 32 characters."
+            exit 1
+          fi
+
           if [[ ! "${JWT_EXPIRATION_MINUTES}" =~ ^[0-9]+$ ]]; then
-            echo "JWT_EXPIRATION_MINUTES must be numeric."
+            echo "JWT_EXPIRATION_MINUTES must be a positive integer."
+            exit 1
+          fi
+
+          if [ "${JWT_EXPIRATION_MINUTES}" -le 0 ]; then
+            echo "JWT_EXPIRATION_MINUTES must be a positive integer."
             exit 1
           fi
 
