@@ -1,10 +1,10 @@
-name: deploy-api
+name: Deploy API
 
 on:
   workflow_dispatch:
     inputs:
       enable_initial_admin:
-        description: "Habilitar criação controlada do admin inicial nesta execução"
+        description: "Habilitar criacao controlada do admin inicial nesta execucao"
         required: true
         default: "false"
         type: choice
@@ -20,18 +20,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy API to EKS
+  validate:
+    name: Validate configuration
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
 
     env:
-      DOTNET_NOLOGO: true
-      DOTNET_CLI_TELEMETRY_OPTOUT: true
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
       ECR_REPOSITORY_URL: ${{ secrets.ECR_REPOSITORY_URL }}
       EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
@@ -53,9 +49,6 @@ jobs:
       ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
       - name: Validate required configuration
         shell: bash
         run: |
@@ -81,6 +74,11 @@ jobs:
               missing=1
             fi
           done
+
+          if [ "${ENABLE_INITIAL_ADMIN}" != "true" ] && [ "${ENABLE_INITIAL_ADMIN}" != "false" ]; then
+            echo "enable_initial_admin must be true or false."
+            missing=1
+          fi
 
           if [ "${ENABLE_INITIAL_ADMIN}" = "true" ]; then
             admin_vars=(
@@ -168,11 +166,22 @@ jobs:
             fi
           fi
 
-          echo "ECR_REPOSITORY_NAME=${ECR_REPOSITORY_URL##*/}" >> "${GITHUB_ENV}"
-          echo "ECR_REGISTRY_URL=${ECR_REPOSITORY_URL%/*}" >> "${GITHUB_ENV}"
-          echo "IMAGE=${ECR_REPOSITORY_URL}:${GITHUB_SHA}" >> "${GITHUB_ENV}"
-          echo "EMAIL_ENABLE_SSL_NORMALIZED=${email_enable_ssl_normalized}" >> "${GITHUB_ENV}"
-          echo "EMAIL_SMTP_PORT_NORMALIZED=${email_smtp_port}" >> "${GITHUB_ENV}"
+          echo "Required configuration validated."
+
+  build-and-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: validate
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -188,8 +197,31 @@ jobs:
       - name: Test
         run: dotnet test Oficina.sln --configuration Release --no-build
 
-      - name: Configure AWS credentials with session token
-        if: env.AWS_SESSION_TOKEN != ''
+  publish-image:
+    name: Publish image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - validate
+      - build-and-test
+
+    outputs:
+      image_uri: ${{ steps.publish.outputs.image_uri }}
+      ecr_repository_name: ${{ steps.publish.outputs.ecr_repository_name }}
+      ecr_registry_url: ${{ steps.publish.outputs.ecr_registry_url }}
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REPOSITORY_URL: ${{ secrets.ECR_REPOSITORY_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
@@ -197,43 +229,41 @@ jobs:
           aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Configure AWS credentials without session token
-        if: env.AWS_SESSION_TOKEN == ''
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
-
       - name: Login to Amazon ECR
         shell: bash
         run: |
           set -euo pipefail
-          aws ecr get-login-password --region "${AWS_REGION}" \
-            | docker login --username AWS --password-stdin "${ECR_REGISTRY_URL}"
 
-      - name: Publish image tags
+          ecr_registry_url="${ECR_REPOSITORY_URL%/*}"
+
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login --username AWS --password-stdin "${ecr_registry_url}"
+
+      - name: Publish and validate image tags
+        id: publish
         shell: bash
         run: |
           set -euo pipefail
 
+          image_uri="${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
+          latest_uri="${ECR_REPOSITORY_URL}:latest"
+          ecr_repository_name="${ECR_REPOSITORY_URL##*/}"
+          ecr_registry_url="${ECR_REPOSITORY_URL%/*}"
+
           if aws ecr describe-images \
-              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --repository-name "${ecr_repository_name}" \
               --image-ids imageTag="${GITHUB_SHA}" \
               --region "${AWS_REGION}" >/tmp/ecr-sha-image.json 2>/tmp/ecr-sha-error.log; then
             echo "Commit SHA tag already exists in ECR. Reusing immutable image."
             sha_digest="$(aws ecr describe-images \
-              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --repository-name "${ecr_repository_name}" \
               --image-ids imageTag="${GITHUB_SHA}" \
               --region "${AWS_REGION}" \
               --query 'imageDetails[0].imageDigest' \
               --output text)"
 
             latest_digest="$(aws ecr describe-images \
-              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --repository-name "${ecr_repository_name}" \
               --image-ids imageTag=latest \
               --region "${AWS_REGION}" \
               --query 'imageDetails[0].imageDigest' \
@@ -243,14 +273,14 @@ jobs:
               echo "latest already points to the commit SHA image digest."
             else
               aws ecr batch-get-image \
-                --repository-name "${ECR_REPOSITORY_NAME}" \
+                --repository-name "${ecr_repository_name}" \
                 --image-ids imageTag="${GITHUB_SHA}" \
                 --region "${AWS_REGION}" \
                 --query 'images[0].imageManifest' \
                 --output text > /tmp/ecr-sha-manifest.json
 
               aws ecr put-image \
-                --repository-name "${ECR_REPOSITORY_NAME}" \
+                --repository-name "${ecr_repository_name}" \
                 --image-tag latest \
                 --image-manifest file:///tmp/ecr-sha-manifest.json \
                 --region "${AWS_REGION}" >/dev/null
@@ -259,30 +289,25 @@ jobs:
             echo "Commit SHA tag does not exist in ECR. Building and publishing image."
             docker build \
               -f docker/Dockerfile \
-              -t "${IMAGE}" \
-              -t "${ECR_REPOSITORY_URL}:latest" \
+              -t "${image_uri}" \
+              -t "${latest_uri}" \
               .
-            docker push "${IMAGE}"
-            docker push "${ECR_REPOSITORY_URL}:latest"
+            docker push "${image_uri}"
+            docker push "${latest_uri}"
           else
             echo "Failed to check commit SHA tag in ECR."
             exit 1
           fi
 
-      - name: Validate ECR tags and digest
-        shell: bash
-        run: |
-          set -euo pipefail
-
           sha_digest="$(aws ecr describe-images \
-            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --repository-name "${ecr_repository_name}" \
             --image-ids imageTag="${GITHUB_SHA}" \
             --region "${AWS_REGION}" \
             --query 'imageDetails[0].imageDigest' \
             --output text)"
 
           latest_digest="$(aws ecr describe-images \
-            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --repository-name "${ecr_repository_name}" \
             --image-ids imageTag=latest \
             --region "${AWS_REGION}" \
             --query 'imageDetails[0].imageDigest' \
@@ -304,6 +329,54 @@ jobs:
           fi
 
           echo "ECR tags validated: commit SHA and latest point to the same digest."
+          echo "image_uri=${image_uri}" >> "${GITHUB_OUTPUT}"
+          echo "ecr_repository_name=${ecr_repository_name}" >> "${GITHUB_OUTPUT}"
+          echo "ecr_registry_url=${ecr_registry_url}" >> "${GITHUB_OUTPUT}"
+
+  run-migration:
+    name: Run migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: publish-image
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+      DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+      JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+      JWT_EXPIRATION_MINUTES: ${{ secrets.JWT_EXPIRATION_MINUTES }}
+      ADMIN_INICIAL_NOME: ${{ secrets.ADMIN_INICIAL_NOME }}
+      ADMIN_INICIAL_CPF: ${{ secrets.ADMIN_INICIAL_CPF }}
+      ADMIN_INICIAL_SENHA: ${{ secrets.ADMIN_INICIAL_SENHA }}
+      EMAIL_SMTP_HOST: ${{ vars.EMAIL_SMTP_HOST }}
+      EMAIL_SMTP_PORT: ${{ vars.EMAIL_SMTP_PORT }}
+      EMAIL_ENABLE_SSL: ${{ vars.EMAIL_ENABLE_SSL }}
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+      EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO: ${{ vars.EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO }}
+      EMAIL_SMTP_USERNAME: ${{ secrets.EMAIL_SMTP_USERNAME }}
+      EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+      ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
+      IMAGE_URI: ${{ needs['publish-image'].outputs.image_uri }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
 
       - name: Configure kubeconfig
         shell: bash
@@ -355,14 +428,24 @@ jobs:
         run: |
           set -euo pipefail
 
+          email_enable_ssl_normalized="$(printf '%s' "${EMAIL_ENABLE_SSL:-false}" | tr '[:upper:]' '[:lower:]')"
+          if [ -z "${email_enable_ssl_normalized}" ]; then
+            email_enable_ssl_normalized="false"
+          fi
+
+          email_smtp_port="${EMAIL_SMTP_PORT:-0}"
+          if [ -z "${email_smtp_port}" ]; then
+            email_smtp_port="0"
+          fi
+
           kubectl create configmap oficina-api-config \
             -n oficina \
             --from-literal=ASPNETCORE_ENVIRONMENT=Production \
             --from-literal=ASPNETCORE_URLS=http://+:8080 \
             --from-literal=AdminInicial__Enabled="${ENABLE_INITIAL_ADMIN}" \
             --from-literal=EmailSettings__SmtpHost="${EMAIL_SMTP_HOST:-}" \
-            --from-literal=EmailSettings__SmtpPort="${EMAIL_SMTP_PORT_NORMALIZED:-0}" \
-            --from-literal=EmailSettings__EnableSsl="${EMAIL_ENABLE_SSL_NORMALIZED:-false}" \
+            --from-literal=EmailSettings__SmtpPort="${email_smtp_port}" \
+            --from-literal=EmailSettings__EnableSsl="${email_enable_ssl_normalized}" \
             --from-literal=EmailSettings__From="${EMAIL_FROM:-}" \
             --from-literal=EmailSettings__BaseUrlAprovaRecusaOrcamento="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}" \
             --dry-run=client \
@@ -402,17 +485,21 @@ jobs:
             -n oficina \
             "${secret_args[@]}"
 
-      - name: Render Kubernetes manifests
+      - name: Render migration manifest
         shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p /tmp/oficina-k8s
-          sed "s|__IMAGE__|${IMAGE}|g" k8s/migration-job.yaml > /tmp/oficina-k8s/migration-job.yaml
-          sed "s|__IMAGE__|${IMAGE}|g" k8s/deployment.yaml > /tmp/oficina-k8s/deployment.yaml
+          if [ -z "${IMAGE_URI}" ]; then
+            echo "image_uri output is required to render the migration manifest."
+            exit 1
+          fi
 
-          if grep -R "__IMAGE__" /tmp/oficina-k8s; then
-            echo "Rendered Kubernetes manifests still contain __IMAGE__ placeholder."
+          mkdir -p /tmp/oficina-k8s
+          sed "s|__IMAGE__|${IMAGE_URI}|g" k8s/migration-job.yaml > /tmp/oficina-k8s/migration-job.yaml
+
+          if grep -R "__IMAGE__" /tmp/oficina-k8s/migration-job.yaml; then
+            echo "Rendered migration manifest still contains __IMAGE__ placeholder."
             exit 1
           fi
 
@@ -423,17 +510,75 @@ jobs:
 
           diagnose_migration() {
             kubectl describe job oficina-api-migration -n oficina || true
-            kubectl get pods -n oficina -l job-name=oficina-api-migration || true
+            kubectl get pods -n oficina -l job-name=oficina-api-migration -o wide || true
+            kubectl describe pods -n oficina -l job-name=oficina-api-migration || true
             kubectl logs -n oficina -l job-name=oficina-api-migration --tail=200 || true
+            kubectl logs -n oficina -l job-name=oficina-api-migration --previous --tail=200 || true
+            kubectl get events -n oficina --sort-by=.lastTimestamp || true
           }
 
           kubectl delete job oficina-api-migration -n oficina --ignore-not-found=true
           kubectl wait --for=delete job/oficina-api-migration -n oficina --timeout=120s || true
           kubectl apply -f /tmp/oficina-k8s/migration-job.yaml
 
-          if ! kubectl wait --for=condition=complete job/oficina-api-migration -n oficina --timeout=300s; then
+          if ! kubectl wait --for=condition=complete job/oficina-api-migration -n oficina --timeout=1200s; then
             echo "Migration job failed or timed out."
             diagnose_migration
+            exit 1
+          fi
+
+  deploy-api:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - publish-image
+      - run-migration
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+      IMAGE_URI: ${{ needs['publish-image'].outputs.image_uri }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      - name: Render deployment manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${IMAGE_URI}" ]; then
+            echo "image_uri output is required to render the deployment manifest."
+            exit 1
+          fi
+
+          mkdir -p /tmp/oficina-k8s
+          sed "s|__IMAGE__|${IMAGE_URI}|g" k8s/deployment.yaml > /tmp/oficina-k8s/deployment.yaml
+
+          if grep -R "__IMAGE__" /tmp/oficina-k8s/deployment.yaml; then
+            echo "Rendered deployment manifest still contains __IMAGE__ placeholder."
             exit 1
           fi
 
@@ -442,10 +587,56 @@ jobs:
         run: |
           set -euo pipefail
 
+          diagnose_rollout() {
+            kubectl describe deployment oficina-api -n oficina || true
+            kubectl get pods -n oficina -l app=oficina-api -o wide || true
+            kubectl describe pods -n oficina -l app=oficina-api || true
+            kubectl logs -n oficina -l app=oficina-api --tail=200 || true
+            kubectl logs -n oficina -l app=oficina-api --previous --tail=200 || true
+            kubectl get events -n oficina --sort-by=.lastTimestamp || true
+          }
+
           kubectl apply -f /tmp/oficina-k8s/deployment.yaml
           kubectl apply -f k8s/service.yaml
           kubectl annotate deployment oficina-api -n oficina redeployTimestamp="$(date +%s)" --overwrite
-          kubectl rollout status deployment/oficina-api -n oficina --timeout=300s
+
+          if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=1200s; then
+            echo "API deployment rollout failed or timed out."
+            diagnose_rollout
+            exit 1
+          fi
+
+  validate-deploy:
+    name: Validate deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - deploy-api
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
 
       - name: Validate service and health
         shell: bash
@@ -456,11 +647,13 @@ jobs:
             kubectl describe svc oficina-api -n oficina || true
             kubectl get svc oficina-api -n oficina -o yaml || true
             kubectl get endpoints oficina-api -n oficina || true
-            kubectl get pods -n oficina -l app=oficina-api || true
+            kubectl get pods -n oficina -l app=oficina-api -o wide || true
+            kubectl logs -n oficina -l app=oficina-api --tail=200 || true
+            kubectl logs -n oficina -l app=oficina-api --previous --tail=200 || true
           }
 
           address=""
-          for attempt in {1..40}; do
+          for attempt in {1..80}; do
             address="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
             if [ -z "${address}" ]; then
               address="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
@@ -480,7 +673,7 @@ jobs:
           fi
 
           health_url="http://${address}/health"
-          for attempt in {1..30}; do
+          for attempt in {1..60}; do
             if curl -fsS "${health_url}" >/dev/null; then
               echo "Health check succeeded."
               kubectl get pods -n oficina -l app=oficina-api

@@ -2,7 +2,7 @@
 
 ## Visão geral
 
-Este repositório contém a API principal da Oficina API. Ele é a **etapa 3** da implantação da solução.
+Este repositório contém a API principal da Oficina API. Ele corresponde à etapa 3 da implantação da solução.
 
 A aplicação é uma API REST em .NET 10 para clientes, veículos, serviços, peças, estoque, ordens de serviço, diagnósticos, orçamentos, autenticação e autorização JWT. Nesta etapa, a imagem Docker é publicada no ECR, as migrations são executadas por um Kubernetes Job e a API é implantada no EKS.
 
@@ -10,7 +10,7 @@ A aplicação é uma API REST em .NET 10 para clientes, veículos, serviços, pe
 
 1. `oficina-infra-db`
 2. `oficina-infra-k8s`
-3. **`oficina-api`**
+3. `oficina-api`
 4. `oficina-auth-lambda`
 5. `oficina-infra-k8s` novamente para API Gateway, quando essa etapa estiver implementada
 
@@ -144,6 +144,7 @@ kubectl get endpoints oficina-api -n oficina
 kubectl get pods -n oficina -l app=oficina-api
 ```
 
+
 ## Configuração local
 
 Crie o arquivo local de variáveis:
@@ -163,11 +164,9 @@ ADMIN_INICIAL_CPF=39053344705
 ADMIN_INICIAL_SENHA=Senha@123
 ```
 
-O envio de e-mail é best-effort: se SMTP estiver ausente ou falhar, a operação principal continua. Quando SMTP não estiver configurado, o sender registra log seguro informando que o e-mail não foi enviado e não tenta conexão. SMTP real não é obrigatório para subir a API.
+O envio de e-mail é best-effort: se SMTP estiver ausente ou falhar, a operação principal continua. Quando SMTP não estiver configurado, o sender registra log seguro informando que o e-mail não foi enviado e não tenta conexão.
 
-Após usar `enable_initial_admin=true` na primeira subida em cloud, execute um novo deploy com `enable_initial_admin=false`. Isso remove `AdminInicial__Nome`, `AdminInicial__Cpf` e `AdminInicial__Senha` do Secret Kubernetes recriado pelo workflow.
-
-O bootstrap do admin inicial é idempotente: se o CPF já existir, ele não recria o admin, não sobrescreve senha e não falha o startup.
+Depois de usar `enable_initial_admin=true` na primeira subida em cloud, execute um novo deploy com `enable_initial_admin=false`. Isso remove `AdminInicial__Nome`, `AdminInicial__Cpf` e `AdminInicial__Senha` do Secret Kubernetes recriado pelo workflow.
 
 ## Execução local com Docker
 
@@ -245,7 +244,7 @@ aws eks update-kubeconfig --name <cluster_name> --region <region>
 kubectl get pods -n oficina
 kubectl get svc oficina-api -n oficina
 kubectl get endpoints oficina-api -n oficina
-kubectl rollout status deployment/oficina-api -n oficina --timeout=300s
+kubectl rollout status deployment/oficina-api -n oficina --timeout=1200s
 ```
 
 Quando o Service receber hostname ou IP, valide:
@@ -273,7 +272,7 @@ Este repositório não gera outputs Terraform. Após a API estar publicada no EK
 | URL pública ou load balancer da API | `oficina-infra-k8s` na etapa de API Gateway | `api_load_balancer_url`, quando implementado |
 | Configuração JWT | `oficina-auth-lambda` | `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_EXPIRATION_MINUTES` |
 | Tag `${GITHUB_SHA}` | Auditoria e rollback | Referência rastreável da versão publicada |
-| Tag `latest` | Operação corrente | Alias mutável da imagem mais recente |
+| Tag `latest` | Operação corrente | Alias mutável da imagem mais recente no ECR |
 
 ## Problemas comuns
 
@@ -285,6 +284,8 @@ Este repositório não gera outputs Terraform. Após a API estar publicada no EK
 | Digest de `latest` diverge do SHA | Alias apontando para outra imagem | Reexecute o workflow e valide a configuração de mutabilidade do ECR |
 | `latest` não atualiza | Exceção mutável não configurada no ECR | Confirme `ecr_mutable_alias_tag=latest` no `oficina-infra-k8s` |
 | Workflow sem permissão no EKS | Usuário/role AWS sem RBAC no cluster | Ajuste permissões antes de executar o deploy |
+| Rollout timeout | Pod não ficou `Ready`, app falhou no startup ou ambiente está lento | Consulte diagnósticos de deployment, pods, logs e events no job `deploy-api` |
+| Migration timeout na primeira subida | Banco, imagem ou node demoraram em ambiente pequeno | O workflow tolera até `1200s`; se exceder, consulte logs do Job |
 | Swagger não abre | API não iniciou | Consulte logs do pod |
 | E-mail não envia | SMTP não configurado | O envio é best-effort; configure SMTP apenas quando necessário |
 
