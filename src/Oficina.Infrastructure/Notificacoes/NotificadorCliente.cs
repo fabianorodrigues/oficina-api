@@ -58,7 +58,7 @@ public class NotificadorCliente : INotificadorCliente
             return;
         }
 
-        _logger.LogInformation("Notificacao por e-mail enviada para orcamento {OrcamentoId} e OS {OrdemServicoId}.", orcamentoId, ordemServicoId);
+        _logger.LogInformation("Solicitacao de notificacao por e-mail processada para orcamento {OrcamentoId} e OS {OrdemServicoId}.", orcamentoId, ordemServicoId);
     }
 
     public Task NotificarOrcamentoRecusado(Guid orcamentoId, Guid ordemServicoId, CancellationToken ct)

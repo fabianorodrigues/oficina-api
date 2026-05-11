@@ -1,0 +1,497 @@
+name: deploy-api
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_initial_admin:
+        description: "Habilitar criação controlada do admin inicial nesta execução"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy API to EKS
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      ECR_REPOSITORY_URL: ${{ secrets.ECR_REPOSITORY_URL }}
+      EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+      DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+      JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+      JWT_EXPIRATION_MINUTES: ${{ secrets.JWT_EXPIRATION_MINUTES }}
+      ADMIN_INICIAL_NOME: ${{ secrets.ADMIN_INICIAL_NOME }}
+      ADMIN_INICIAL_CPF: ${{ secrets.ADMIN_INICIAL_CPF }}
+      ADMIN_INICIAL_SENHA: ${{ secrets.ADMIN_INICIAL_SENHA }}
+      EMAIL_SMTP_HOST: ${{ vars.EMAIL_SMTP_HOST }}
+      EMAIL_SMTP_PORT: ${{ vars.EMAIL_SMTP_PORT }}
+      EMAIL_ENABLE_SSL: ${{ vars.EMAIL_ENABLE_SSL }}
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+      EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO: ${{ vars.EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO }}
+      EMAIL_SMTP_USERNAME: ${{ secrets.EMAIL_SMTP_USERNAME }}
+      EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+      ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Validate required configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_vars=(
+            AWS_ACCESS_KEY_ID
+            AWS_SECRET_ACCESS_KEY
+            AWS_REGION
+            ECR_REPOSITORY_URL
+            EKS_CLUSTER_NAME
+            DB_CONNECTION_STRING
+            JWT_SECRET
+            JWT_ISSUER
+            JWT_AUDIENCE
+            JWT_EXPIRATION_MINUTES
+          )
+
+          missing=0
+          for var_name in "${required_vars[@]}"; do
+            if [ -z "${!var_name:-}" ]; then
+              echo "${var_name} is required."
+              missing=1
+            fi
+          done
+
+          if [ "${ENABLE_INITIAL_ADMIN}" = "true" ]; then
+            admin_vars=(
+              ADMIN_INICIAL_NOME
+              ADMIN_INICIAL_CPF
+              ADMIN_INICIAL_SENHA
+            )
+
+            for var_name in "${admin_vars[@]}"; do
+              if [ -z "${!var_name:-}" ]; then
+                echo "${var_name} is required when enable_initial_admin=true."
+                missing=1
+              fi
+            done
+          fi
+
+          if [ "${missing}" -ne 0 ]; then
+            exit 1
+          fi
+
+          if [[ ! "${ECR_REPOSITORY_URL}" =~ ^[0-9]+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/.+ ]]; then
+            echo "ECR_REPOSITORY_URL must be a full Amazon ECR repository URL."
+            exit 1
+          fi
+
+          if [[ ! "${JWT_EXPIRATION_MINUTES}" =~ ^[0-9]+$ ]]; then
+            echo "JWT_EXPIRATION_MINUTES must be numeric."
+            exit 1
+          fi
+
+          email_enable_ssl_normalized="$(printf '%s' "${EMAIL_ENABLE_SSL:-false}" | tr '[:upper:]' '[:lower:]')"
+          if [ -z "${email_enable_ssl_normalized}" ]; then
+            email_enable_ssl_normalized="false"
+          fi
+
+          if [ "${email_enable_ssl_normalized}" != "true" ] && [ "${email_enable_ssl_normalized}" != "false" ]; then
+            echo "EMAIL_ENABLE_SSL must be true or false."
+            exit 1
+          fi
+
+          email_smtp_port="${EMAIL_SMTP_PORT:-0}"
+          if [ -z "${email_smtp_port}" ]; then
+            email_smtp_port="0"
+          fi
+
+          if [[ ! "${email_smtp_port}" =~ ^[0-9]+$ ]]; then
+            echo "EMAIL_SMTP_PORT must be numeric when configured."
+            exit 1
+          fi
+
+          smtp_configured=false
+          if [ -n "${EMAIL_SMTP_HOST:-}" ] || [ "${email_smtp_port}" -gt 0 ] || [ -n "${EMAIL_FROM:-}" ] || [ -n "${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}" ] || [ -n "${EMAIL_SMTP_USERNAME:-}" ] || [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            smtp_configured=true
+          fi
+
+          if [ -n "${EMAIL_SMTP_USERNAME:-}" ] && [ -z "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            echo "SMTP username and password must be configured together."
+            exit 1
+          fi
+
+          if [ -z "${EMAIL_SMTP_USERNAME:-}" ] && [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            echo "SMTP username and password must be configured together."
+            exit 1
+          fi
+
+          if [ "${smtp_configured}" = "true" ]; then
+            if [ -z "${EMAIL_SMTP_HOST:-}" ]; then
+              echo "EMAIL_SMTP_HOST is required when SMTP is configured."
+              exit 1
+            fi
+
+            if [ "${email_smtp_port}" -le 0 ]; then
+              echo "EMAIL_SMTP_PORT must be greater than 0 when SMTP is configured."
+              exit 1
+            fi
+
+            if [ -z "${EMAIL_FROM:-}" ]; then
+              echo "EMAIL_FROM is required when SMTP is configured."
+              exit 1
+            fi
+
+            if [ -z "${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}" ]; then
+              echo "EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO is required when SMTP is configured."
+              exit 1
+            fi
+          fi
+
+          echo "ECR_REPOSITORY_NAME=${ECR_REPOSITORY_URL##*/}" >> "${GITHUB_ENV}"
+          echo "ECR_REGISTRY_URL=${ECR_REPOSITORY_URL%/*}" >> "${GITHUB_ENV}"
+          echo "IMAGE=${ECR_REPOSITORY_URL}:${GITHUB_SHA}" >> "${GITHUB_ENV}"
+          echo "EMAIL_ENABLE_SSL_NORMALIZED=${email_enable_ssl_normalized}" >> "${GITHUB_ENV}"
+          echo "EMAIL_SMTP_PORT_NORMALIZED=${email_smtp_port}" >> "${GITHUB_ENV}"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Oficina.sln
+
+      - name: Build solution
+        run: dotnet build Oficina.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Oficina.sln --configuration Release --no-build
+
+      - name: Configure AWS credentials with session token
+        if: env.AWS_SESSION_TOKEN != ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials without session token
+        if: env.AWS_SESSION_TOKEN == ''
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Login to Amazon ECR
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | docker login --username AWS --password-stdin "${ECR_REGISTRY_URL}"
+
+      - name: Publish image tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if aws ecr describe-images \
+              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --image-ids imageTag="${GITHUB_SHA}" \
+              --region "${AWS_REGION}" >/tmp/ecr-sha-image.json 2>/tmp/ecr-sha-error.log; then
+            echo "Commit SHA tag already exists in ECR. Reusing immutable image."
+            sha_digest="$(aws ecr describe-images \
+              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --image-ids imageTag="${GITHUB_SHA}" \
+              --region "${AWS_REGION}" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text)"
+
+            latest_digest="$(aws ecr describe-images \
+              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --image-ids imageTag=latest \
+              --region "${AWS_REGION}" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text 2>/dev/null || true)"
+
+            if [ "${latest_digest}" = "${sha_digest}" ]; then
+              echo "latest already points to the commit SHA image digest."
+            else
+              aws ecr batch-get-image \
+                --repository-name "${ECR_REPOSITORY_NAME}" \
+                --image-ids imageTag="${GITHUB_SHA}" \
+                --region "${AWS_REGION}" \
+                --query 'images[0].imageManifest' \
+                --output text > /tmp/ecr-sha-manifest.json
+
+              aws ecr put-image \
+                --repository-name "${ECR_REPOSITORY_NAME}" \
+                --image-tag latest \
+                --image-manifest file:///tmp/ecr-sha-manifest.json \
+                --region "${AWS_REGION}" >/dev/null
+            fi
+          elif grep -q "ImageNotFoundException" /tmp/ecr-sha-error.log; then
+            echo "Commit SHA tag does not exist in ECR. Building and publishing image."
+            docker build \
+              -f docker/Dockerfile \
+              -t "${IMAGE}" \
+              -t "${ECR_REPOSITORY_URL}:latest" \
+              .
+            docker push "${IMAGE}"
+            docker push "${ECR_REPOSITORY_URL}:latest"
+          else
+            echo "Failed to check commit SHA tag in ECR."
+            exit 1
+          fi
+
+      - name: Validate ECR tags and digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sha_digest="$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --image-ids imageTag="${GITHUB_SHA}" \
+            --region "${AWS_REGION}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+
+          latest_digest="$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --image-ids imageTag=latest \
+            --region "${AWS_REGION}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+
+          if [ -z "${sha_digest}" ] || [ "${sha_digest}" = "None" ]; then
+            echo "Commit SHA tag was not found in ECR."
+            exit 1
+          fi
+
+          if [ -z "${latest_digest}" ] || [ "${latest_digest}" = "None" ]; then
+            echo "latest tag was not found in ECR."
+            exit 1
+          fi
+
+          if [ "${sha_digest}" != "${latest_digest}" ]; then
+            echo "latest tag digest differs from commit SHA tag digest."
+            exit 1
+          fi
+
+          echo "ECR tags validated: commit SHA and latest point to the same digest."
+
+      - name: Configure kubeconfig
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+
+      - name: Apply namespace
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Validate Kubernetes access
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          kubectl get nodes
+
+          require_can_i() {
+            local verb="$1"
+            local resource="$2"
+            local result
+            result="$(kubectl auth can-i "${verb}" "${resource}" -n oficina)"
+            if [ "${result}" != "yes" ]; then
+              echo "Missing Kubernetes permission: ${verb} ${resource} in namespace oficina."
+              exit 1
+            fi
+          }
+
+          require_can_i get pods
+          require_can_i list pods
+          require_can_i create jobs
+          require_can_i get jobs
+          require_can_i delete jobs
+          require_can_i create secrets
+          require_can_i delete secrets
+          require_can_i create configmaps
+          require_can_i patch configmaps
+          require_can_i update configmaps
+          require_can_i create deployments
+          require_can_i patch deployments
+          require_can_i update deployments
+          require_can_i create services
+          require_can_i patch services
+          require_can_i update services
+          require_can_i get services
+
+      - name: Apply ConfigMap
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          kubectl create configmap oficina-api-config \
+            -n oficina \
+            --from-literal=ASPNETCORE_ENVIRONMENT=Production \
+            --from-literal=ASPNETCORE_URLS=http://+:8080 \
+            --from-literal=AdminInicial__Enabled="${ENABLE_INITIAL_ADMIN}" \
+            --from-literal=EmailSettings__SmtpHost="${EMAIL_SMTP_HOST:-}" \
+            --from-literal=EmailSettings__SmtpPort="${EMAIL_SMTP_PORT_NORMALIZED:-0}" \
+            --from-literal=EmailSettings__EnableSsl="${EMAIL_ENABLE_SSL_NORMALIZED:-false}" \
+            --from-literal=EmailSettings__From="${EMAIL_FROM:-}" \
+            --from-literal=EmailSettings__BaseUrlAprovaRecusaOrcamento="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}" \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
+
+      - name: Recreate API Secret
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          kubectl delete secret oficina-api-secret -n oficina --ignore-not-found=true
+
+          secret_args=(
+            --from-literal=ConnectionStrings__SqlServer="${DB_CONNECTION_STRING}"
+            --from-literal=Jwt__Secret="${JWT_SECRET}"
+            --from-literal=Jwt__Issuer="${JWT_ISSUER}"
+            --from-literal=Jwt__Audience="${JWT_AUDIENCE}"
+            --from-literal=Jwt__ExpirationMinutes="${JWT_EXPIRATION_MINUTES}"
+          )
+
+          if [ -n "${EMAIL_SMTP_USERNAME:-}" ] && [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
+            secret_args+=(
+              --from-literal=EmailSettings__Username="${EMAIL_SMTP_USERNAME}"
+              --from-literal=EmailSettings__Password="${EMAIL_SMTP_PASSWORD}"
+            )
+          fi
+
+          if [ "${ENABLE_INITIAL_ADMIN}" = "true" ]; then
+            secret_args+=(
+              --from-literal=AdminInicial__Nome="${ADMIN_INICIAL_NOME}"
+              --from-literal=AdminInicial__Cpf="${ADMIN_INICIAL_CPF}"
+              --from-literal=AdminInicial__Senha="${ADMIN_INICIAL_SENHA}"
+            )
+          fi
+
+          kubectl create secret generic oficina-api-secret \
+            -n oficina \
+            "${secret_args[@]}"
+
+      - name: Render Kubernetes manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p /tmp/oficina-k8s
+          sed "s|__IMAGE__|${IMAGE}|g" k8s/migration-job.yaml > /tmp/oficina-k8s/migration-job.yaml
+          sed "s|__IMAGE__|${IMAGE}|g" k8s/deployment.yaml > /tmp/oficina-k8s/deployment.yaml
+
+          if grep -R "__IMAGE__" /tmp/oficina-k8s; then
+            echo "Rendered Kubernetes manifests still contain __IMAGE__ placeholder."
+            exit 1
+          fi
+
+      - name: Run migration job
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          diagnose_migration() {
+            kubectl describe job oficina-api-migration -n oficina || true
+            kubectl get pods -n oficina -l job-name=oficina-api-migration || true
+            kubectl logs -n oficina -l job-name=oficina-api-migration --tail=200 || true
+          }
+
+          kubectl delete job oficina-api-migration -n oficina --ignore-not-found=true
+          kubectl wait --for=delete job/oficina-api-migration -n oficina --timeout=120s || true
+          kubectl apply -f /tmp/oficina-k8s/migration-job.yaml
+
+          if ! kubectl wait --for=condition=complete job/oficina-api-migration -n oficina --timeout=300s; then
+            echo "Migration job failed or timed out."
+            diagnose_migration
+            exit 1
+          fi
+
+      - name: Apply API workloads
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          kubectl apply -f /tmp/oficina-k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl annotate deployment oficina-api -n oficina redeployTimestamp="$(date +%s)" --overwrite
+          kubectl rollout status deployment/oficina-api -n oficina --timeout=300s
+
+      - name: Validate service and health
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          diagnose_service() {
+            kubectl describe svc oficina-api -n oficina || true
+            kubectl get svc oficina-api -n oficina -o yaml || true
+            kubectl get endpoints oficina-api -n oficina || true
+            kubectl get pods -n oficina -l app=oficina-api || true
+          }
+
+          address=""
+          for attempt in {1..40}; do
+            address="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+            if [ -z "${address}" ]; then
+              address="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+            fi
+
+            if [ -n "${address}" ]; then
+              break
+            fi
+
+            sleep 15
+          done
+
+          if [ -z "${address}" ]; then
+            echo "LoadBalancer did not receive a hostname or IP before timeout."
+            diagnose_service
+            exit 1
+          fi
+
+          health_url="http://${address}/health"
+          for attempt in {1..30}; do
+            if curl -fsS "${health_url}" >/dev/null; then
+              echo "Health check succeeded."
+              kubectl get pods -n oficina -l app=oficina-api
+              kubectl get svc oficina-api -n oficina
+              kubectl get endpoints oficina-api -n oficina
+              exit 0
+            fi
+
+            sleep 10
+          done
+
+          echo "Health check did not succeed before timeout."
+          diagnose_service
+          exit 1

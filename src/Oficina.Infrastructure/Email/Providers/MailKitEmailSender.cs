@@ -21,6 +21,12 @@ public class MailKitEmailSender : IEmailSender
 
     public async Task Enviar(EmailMessage message, CancellationToken ct)
     {
+        if (SmtpNaoConfigurado())
+        {
+            _logger.LogWarning("E-mail nao enviado porque SMTP nao esta configurado.");
+            return;
+        }
+
         ValidarAutenticacaoSmtp();
 
         var email = new MimeMessage();
@@ -43,6 +49,9 @@ public class MailKitEmailSender : IEmailSender
 
         _logger.LogInformation("E-mail enviado com sucesso.");
     }
+
+    private bool SmtpNaoConfigurado()
+        => string.IsNullOrWhiteSpace(_settings.SmtpHost) || _settings.SmtpPort <= 0;
 
     private void ValidarAutenticacaoSmtp()
     {

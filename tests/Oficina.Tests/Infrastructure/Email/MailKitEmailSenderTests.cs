@@ -65,6 +65,46 @@ public class MailKitEmailSenderTests
         Assert.DoesNotContain("usuario", ex.Message.Replace("usuario e senha", string.Empty));
     }
 
+    [Fact]
+    public async Task Enviar_QuandoSmtpHostEstiverVazio_NaoDevePropagarErro()
+    {
+        var sender = new MailKitEmailSender(
+            Options.Create(new EmailSettings
+            {
+                From = "",
+                SmtpHost = "",
+                SmtpPort = 25
+            }),
+            NullLogger<MailKitEmailSender>.Instance);
+
+        await sender.Enviar(new EmailMessage
+        {
+            To = "destinatario-invalido",
+            Subject = "Teste",
+            HtmlBody = "<p>Teste</p>"
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Enviar_QuandoSmtpPortaForZero_NaoDevePropagarErro()
+    {
+        var sender = new MailKitEmailSender(
+            Options.Create(new EmailSettings
+            {
+                From = "",
+                SmtpHost = "smtp.example.com",
+                SmtpPort = 0
+            }),
+            NullLogger<MailKitEmailSender>.Instance);
+
+        await sender.Enviar(new EmailMessage
+        {
+            To = "destinatario-invalido",
+            Subject = "Teste",
+            HtmlBody = "<p>Teste</p>"
+        }, CancellationToken.None);
+    }
+
     private static MailKitEmailSender CriarSender(string from)
         => new(
             Options.Create(new EmailSettings
