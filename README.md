@@ -55,7 +55,7 @@ Configure os valores em `GitHub > Settings > Secrets and variables > Actions`.
 | `ECR_REPOSITORY_URL` | Secret | Output `ecr_repository_url` do `oficina-infra-k8s` | Publicar imagem Docker |
 | `EKS_CLUSTER_NAME` | Secret | Output `cluster_name` do `oficina-infra-k8s` | Deploy no EKS |
 | `DB_CONNECTION_STRING` | Secret | Montada com outputs do `oficina-infra-db` | Conexão da API com SQL Server |
-| `JWT_SECRET` | Secret | Valor definido pelo usuário | Validar tokens JWT |
+| `JWT_SECRET` | Secret | Valor definido pelo usuário, com no mínimo 32 caracteres | Validar tokens JWT |
 | `JWT_ISSUER` | Secret | Mesmo valor do `oficina-auth-lambda` | Validar issuer JWT |
 | `JWT_AUDIENCE` | Secret | Mesmo valor do `oficina-auth-lambda` | Validar audience JWT |
 | `JWT_EXPIRATION_MINUTES` | Secret | Mesmo valor do `oficina-auth-lambda` | Expiração dos tokens |
@@ -66,6 +66,8 @@ Configure os valores em `GitHub > Settings > Secrets and variables > Actions`.
 | `EMAIL_SMTP_PASSWORD` | Secret opcional | Senha do provedor SMTP | Usado somente se o SMTP exigir autenticação |
 
 `AWS_SESSION_TOKEN` é opcional. Quando estiver preenchido, o workflow configura credenciais AWS com session token. Quando estiver vazio, usa apenas `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_REGION`.
+
+`JWT_SECRET`, `JWT_ISSUER` e `JWT_AUDIENCE` precisam ser iguais em `oficina-api` e `oficina-auth-lambda`. Se `JWT_SECRET` for alterado no `oficina-api`, atualize o mesmo valor no `oficina-auth-lambda` e republique as Lambdas para manter a emissão e a validação dos tokens compatíveis.
 
 Configure também GitHub Variables opcionais para SMTP em cloud:
 
@@ -282,7 +284,7 @@ Este repositório não gera outputs Terraform. Após a API estar publicada no EK
 | Valor | Usado por | Configurar como |
 |---|---|---|
 | URL pública ou load balancer da API | `oficina-infra-k8s` na etapa de API Gateway | `api_load_balancer_url`, quando implementado |
-| Configuração JWT | `oficina-auth-lambda` | `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_EXPIRATION_MINUTES` |
+| Configuração JWT | `oficina-auth-lambda` | `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_EXPIRATION_MINUTES`; mantenha secret, issuer e audience iguais nos dois repositórios |
 | Tag `${GITHUB_SHA}` | Auditoria e rollback | Referência rastreável da versão publicada |
 | Tag `latest` | Operação corrente | Alias mutável da imagem mais recente no ECR |
 
