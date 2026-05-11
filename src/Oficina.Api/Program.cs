@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Oficina.Api.Endpoints;
 using Oficina.Api.Filters;
 using Oficina.Api.Middlewares;
 using Oficina.Api.Security;
@@ -80,6 +81,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IPasswordHashService, PasswordHashService>();
 builder.Services.AddScoped<IUsuarioAtual, UsuarioAtual>();
+builder.Services.AddSingleton<IAdminInicialBootstrapper, AdminInicialBootstrapperAdapter>();
+builder.Services.Configure<AdminInicialBootstrapOptions>(
+    builder.Configuration.GetSection("AdminInicialBootstrap"));
+builder.Services.AddHostedService<AdminInicialBackgroundService>();
 
 var jwtKey = builder.Configuration["Jwt:Secret"]
              ?? builder.Configuration["Jwt:Key"]
@@ -136,8 +141,6 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
-await ExecutarInicializacaoBancoComRetry(app);
-
 app.UseSwagger(options =>
 {
     options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_0;
@@ -156,40 +159,8 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
-   .AllowAnonymous();
+app.MapHealthEndpoints();
 
 app.MapControllers();
 
 app.Run();
-
-static async Task ExecutarInicializacaoBancoComRetry(WebApplication app)
-{
-    const int maxTentativas = 12;
-    var intervalo = TimeSpan.FromSeconds(5);
-
-    for (var tentativa = 1; tentativa <= maxTentativas; tentativa++)
-    {
-        try
-        {
-            await AdminInicialBootstrapper.GarantirAdminInicial(app);
-
-            return;
-        }
-        catch (Exception ex) when (tentativa < maxTentativas)
-        {
-            Console.WriteLine(
-                $"Banco indisponivel na tentativa {tentativa}/{maxTentativas}. " +
-                $"Nova tentativa em {intervalo.TotalSeconds}s. Erro: {ex.Message}");
-
-            await Task.Delay(intervalo);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(
-                $"Erro ao inicializar banco apos {maxTentativas} tentativas: {ex.Message}");
-
-            throw;
-        }
-    }
-}
