@@ -7,7 +7,7 @@ metadata:
     app: oficina-api
 spec:
   backoffLimit: 1
-  activeDeadlineSeconds: 1200
+  activeDeadlineSeconds: 300
   template:
     metadata:
       labels:

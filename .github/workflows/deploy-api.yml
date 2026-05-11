@@ -517,7 +517,7 @@ jobs:
           kubectl wait --for=delete job/oficina-api-migration -n oficina --timeout=120s || true
           kubectl apply -f /tmp/oficina-k8s/migration-job.yaml
 
-          if ! kubectl wait --for=condition=complete job/oficina-api-migration -n oficina --timeout=1200s; then
+          if ! kubectl wait --for=condition=complete job/oficina-api-migration -n oficina --timeout=300s; then
             echo "Migration job failed or timed out."
             diagnose_migration
             exit 1
@@ -598,7 +598,7 @@ jobs:
           kubectl apply -f k8s/service.yaml
           kubectl annotate deployment oficina-api -n oficina redeployTimestamp="$(date +%s)" --overwrite
 
-          if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=1200s; then
+          if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=300s; then
             echo "API deployment rollout failed or timed out."
             diagnose_rollout
             exit 1

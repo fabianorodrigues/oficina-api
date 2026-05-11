@@ -108,6 +108,8 @@ O input `enable_initial_admin` controla a criação do admin inicial:
 
 Use `enable_initial_admin=true` somente quando precisar preparar a primeira autenticação em um banco vazio. O Secret Kubernetes é recriado a cada deploy; quando esse input estiver `false`, as chaves de admin inicial não ficam preservadas no Secret.
 
+Quando habilitado, o bootstrap do admin inicial é executado em background com retry limitado. Se a configuração obrigatória estiver ausente ou o banco permanecer indisponível, a API registra erro seguro e continua de pé.
+
 O workflow executa:
 
 - validação de secrets obrigatórios sem imprimir valores;
@@ -125,23 +127,32 @@ O workflow executa:
 - recriação do Secret da API sem versionar valores, incluindo credenciais SMTP somente quando configuradas em par;
 - execução do Kubernetes Job de migration;
 - deploy da API com Service `LoadBalancer`;
-- validação de rollout e `/health` com retry.
+- validação de rollout, LoadBalancer e `/health` com retry.
+
+As probes Kubernetes são separadas:
+
+- `startupProbe`: usa `/health`, que valida apenas se o processo HTTP está respondendo;
+- `livenessProbe`: usa `/health`;
+- `readinessProbe`: usa `/ready`, que valida a prontidão da API e a conexão com o banco usando timeout curto.
 
 Se a migration falhar ou der timeout, o workflow coleta diagnóstico com:
 
 ```powershell
-kubectl describe job oficina-api-migration -n oficina
-kubectl get pods -n oficina -l job-name=oficina-api-migration
-kubectl logs -n oficina -l job-name=oficina-api-migration --tail=200
+kubectl describe job oficina-api-migration -n oficina || true
+kubectl get pods -n oficina -l job-name=oficina-api-migration || true
+kubectl logs -n oficina -l job-name=oficina-api-migration --tail=200 || true
+kubectl logs -n oficina -l job-name=oficina-api-migration --previous --tail=200 || true
 ```
 
 Se o LoadBalancer ou `/health` falhar, o workflow coleta:
 
 ```powershell
-kubectl describe svc oficina-api -n oficina
-kubectl get svc oficina-api -n oficina -o yaml
-kubectl get endpoints oficina-api -n oficina
-kubectl get pods -n oficina -l app=oficina-api
+kubectl describe svc oficina-api -n oficina || true
+kubectl get svc oficina-api -n oficina -o yaml || true
+kubectl get endpoints oficina-api -n oficina || true
+kubectl get pods -n oficina -l app=oficina-api || true
+kubectl logs -n oficina -l app=oficina-api --tail=200 || true
+kubectl logs -n oficina -l app=oficina-api --previous --tail=200 || true
 ```
 
 
@@ -244,13 +255,14 @@ aws eks update-kubeconfig --name <cluster_name> --region <region>
 kubectl get pods -n oficina
 kubectl get svc oficina-api -n oficina
 kubectl get endpoints oficina-api -n oficina
-kubectl rollout status deployment/oficina-api -n oficina --timeout=1200s
+kubectl rollout status deployment/oficina-api -n oficina --timeout=300s
 ```
 
 Quando o Service receber hostname ou IP, valide:
 
 ```powershell
 Invoke-RestMethod http://<load-balancer>/health
+Invoke-RestMethod http://<load-balancer>/ready
 ```
 
 Collections Postman:
@@ -285,7 +297,7 @@ Este repositório não gera outputs Terraform. Após a API estar publicada no EK
 | `latest` não atualiza | Exceção mutável não configurada no ECR | Confirme `ecr_mutable_alias_tag=latest` no `oficina-infra-k8s` |
 | Workflow sem permissão no EKS | Usuário/role AWS sem RBAC no cluster | Ajuste permissões antes de executar o deploy |
 | Rollout timeout | Pod não ficou `Ready`, app falhou no startup ou ambiente está lento | Consulte diagnósticos de deployment, pods, logs e events no job `deploy-api` |
-| Migration timeout na primeira subida | Banco, imagem ou node demoraram em ambiente pequeno | O workflow tolera até `1200s`; se exceder, consulte logs do Job |
+| Migration timeout na primeira subida | Banco, imagem ou node demoraram em ambiente pequeno | O workflow tolera até `300s`; se exceder, consulte logs do Job |
 | Swagger não abre | API não iniciou | Consulte logs do pod |
 | E-mail não envia | SMTP não configurado | O envio é best-effort; configure SMTP apenas quando necessário |
 
