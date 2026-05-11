@@ -2,30 +2,27 @@
 
 ## Visão geral
 
-Este repositório contém a API principal da Oficina API. Ele corresponde à etapa 3 da implantação da solução.
+Este repositório contém a API principal da solução Oficina API. A aplicação é uma API REST em .NET 10 para clientes, veículos, serviços, peças, estoque, ordens de serviço, diagnósticos, orçamentos, autenticação e autorização JWT.
 
-A aplicação é uma API REST em .NET 10 para clientes, veículos, serviços, peças, estoque, ordens de serviço, diagnósticos, orçamentos, autenticação e autorização JWT. Nesta etapa, a imagem Docker é publicada no ECR, as migrations são executadas por um Kubernetes Job e a API é implantada no EKS.
+Na implantação em AWS, a imagem Docker é publicada no ECR, as migrations são executadas por um Kubernetes Job e a API é implantada no EKS.
 
-## Ordem de implantação da solução
+## Arquitetura e ordem de implantação
 
-1. `oficina-infra-db`
-2. `oficina-infra-k8s`
-3. `oficina-api`
-4. `oficina-auth-lambda`
-5. `oficina-infra-k8s` novamente para API Gateway, quando essa etapa estiver implementada
+1. `oficina-infra-db`: cria VPC, subnets, security groups e RDS.
+2. `oficina-infra-k8s`: cria ECR, EKS e node group.
+3. **`oficina-api`**: publica a imagem no ECR, executa migrations e sobe no EKS.
+4. `oficina-auth-lambda`: publica as Lambdas de autenticação e autorização.
+5. `oficina-infra-k8s`: etapa futura para API Gateway.
 
-## Responsabilidade
+## Responsabilidade deste repositório
 
-Este repositório é responsável por:
-
-- manter o código da API, domínio, infraestrutura e migrations;
-- executar testes automatizados;
-- publicar a imagem Docker no ECR;
-- publicar a tag `${GITHUB_SHA}` como tag rastreável da versão;
-- publicar `latest` apenas como alias operacional mutável;
-- validar que `latest` aponta para o mesmo `imageDigest` da tag `${GITHUB_SHA}`;
-- executar migrations com `APP_MODE=migration`;
-- implantar a API no EKS.
+- Manter o código da API, domínio, infraestrutura e migrations.
+- Executar testes automatizados.
+- Publicar a imagem Docker no ECR.
+- Publicar a tag `${GITHUB_SHA}` como versão rastreável.
+- Usar `latest` apenas como alias operacional mutável.
+- Executar migrations com `APP_MODE=migration`.
+- Implantar a API no EKS.
 
 Kubernetes nunca usa `latest`. O Migration Job e o Deployment usam sempre:
 
@@ -33,61 +30,26 @@ Kubernetes nunca usa `latest`. O Migration Job e o Deployment usam sempre:
 ${ECR_REPOSITORY_URL}:${GITHUB_SHA}
 ```
 
-## Pré-requisitos
+## Integração com os outros repositórios
 
-- Docker Desktop para execução local.
-- .NET SDK 10 conforme `global.json`.
-- AWS CLI para validar ECR e EKS.
-- `kubectl` para validar deploy no EKS.
-- `oficina-infra-db` aplicado com outputs disponíveis.
-- `oficina-infra-k8s` aplicado com ECR e EKS disponíveis.
+Este repositório consome banco, ECR e EKS já provisionados. Ele não gera outputs Terraform.
 
-## Configuração necessária
+### Valores consumidos
 
-Configure os valores em `GitHub > Settings > Secrets and variables > Actions`.
-
-| Nome | Tipo | Origem | Uso |
-|---|---|---|---|
-| `AWS_ACCESS_KEY_ID` | Secret | Credencial AWS do usuário | Autenticar na AWS |
-| `AWS_SECRET_ACCESS_KEY` | Secret | Credencial AWS do usuário | Autenticar na AWS |
-| `AWS_SESSION_TOKEN` | Secret opcional | Credencial temporária, se aplicável | Autenticar com sessão temporária |
-| `AWS_REGION` | Secret | Região escolhida, por exemplo `us-east-1` | ECR, EKS e AWS CLI |
-| `ECR_REPOSITORY_URL` | Secret | Output `ecr_repository_url` do `oficina-infra-k8s` | Publicar imagem Docker |
-| `EKS_CLUSTER_NAME` | Secret | Output `cluster_name` do `oficina-infra-k8s` | Deploy no EKS |
-| `DB_CONNECTION_STRING` | Secret | Montada com outputs do `oficina-infra-db` | Conexão da API com SQL Server |
-| `JWT_SECRET` | Secret | Valor definido pelo usuário, com no mínimo 32 caracteres | Validar tokens JWT |
-| `JWT_ISSUER` | Secret | Mesmo valor do `oficina-auth-lambda` | Validar issuer JWT |
-| `JWT_AUDIENCE` | Secret | Mesmo valor do `oficina-auth-lambda` | Validar audience JWT |
-| `JWT_EXPIRATION_MINUTES` | Secret | Mesmo valor do `oficina-auth-lambda` | Expiração dos tokens |
-| `ADMIN_INICIAL_NOME` | Secret opcional | Valor definido pelo usuário | Usado somente com `enable_initial_admin=true` |
-| `ADMIN_INICIAL_CPF` | Secret opcional | Valor definido pelo usuário | Usado somente com `enable_initial_admin=true` |
-| `ADMIN_INICIAL_SENHA` | Secret opcional | Valor definido pelo usuário | Usado somente com `enable_initial_admin=true` |
-| `EMAIL_SMTP_USERNAME` | Secret opcional | Usuário do provedor SMTP | Usado somente se o SMTP exigir autenticação |
-| `EMAIL_SMTP_PASSWORD` | Secret opcional | Senha do provedor SMTP | Usado somente se o SMTP exigir autenticação |
-
-`AWS_SESSION_TOKEN` é opcional. Quando estiver preenchido, o workflow configura credenciais AWS com session token. Quando estiver vazio, usa apenas `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_REGION`.
-
-`JWT_SECRET`, `JWT_ISSUER` e `JWT_AUDIENCE` precisam ser iguais em `oficina-api` e `oficina-auth-lambda`. Se `JWT_SECRET` for alterado no `oficina-api`, atualize o mesmo valor no `oficina-auth-lambda` e republique as Lambdas para manter a emissão e a validação dos tokens compatíveis.
-
-Configure também GitHub Variables opcionais para SMTP em cloud:
-
-| Nome | Tipo | Uso |
+| Valor | Origem | Uso |
 |---|---|---|
-| `EMAIL_SMTP_HOST` | Variable opcional | Host SMTP em cloud |
-| `EMAIL_SMTP_PORT` | Variable opcional | Porta SMTP; precisa ser maior que `0` quando SMTP estiver configurado |
-| `EMAIL_ENABLE_SSL` | Variable opcional | `true` ou `false`; padrão `false` |
-| `EMAIL_FROM` | Variable opcional | Remetente usado nos e-mails |
-| `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | Variable opcional | URL pública da API usada nos links de aprovação/recusa |
+| `ECR_REPOSITORY_URL` | Output `ecr_repository_url` do `oficina-infra-k8s` | Publicar e implantar a imagem Docker |
+| `EKS_CLUSTER_NAME` | Output `cluster_name` do `oficina-infra-k8s` | Configurar kubeconfig e fazer deploy no EKS |
+| `DB_CONNECTION_STRING` | Outputs `db_address`, `db_port` e `db_name` do `oficina-infra-db`, mais usuário e senha do banco | Conectar a API ao SQL Server |
+| `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_EXPIRATION_MINUTES` | Mesmos valores configurados no `oficina-auth-lambda` | Validar os tokens emitidos pelas Lambdas |
 
-Se SMTP estiver configurado, informe `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_FROM` e `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO`. Se o provedor exigir autenticação, configure `EMAIL_SMTP_USERNAME` e `EMAIL_SMTP_PASSWORD` juntos.
+### Valores gerados
 
-`EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` representa a URL pública da própria API:
-
-- localmente: `http://localhost:8080`;
-- no EKS antes do API Gateway: URL pública do LoadBalancer;
-- após API Gateway: URL pública do API Gateway.
-
-No deploy Kubernetes esse valor não é hardcoded; ele vem somente da GitHub Variable.
+| Valor | Usado por | Uso |
+|---|---|---|
+| URL pública ou load balancer da API | `oficina-infra-k8s`, na etapa futura de API Gateway | Integração pública da API |
+| Tag `${GITHUB_SHA}` | Auditoria e rollback | Referência rastreável da versão publicada |
+| Tag `latest` | Operação corrente | Alias mutável da imagem mais recente no ECR |
 
 Modelo de `DB_CONNECTION_STRING`:
 
@@ -95,7 +57,50 @@ Modelo de `DB_CONNECTION_STRING`:
 Server=<db_address>,<db_port>;Database=<db_name>;User Id=<db-user>;Password=<db-password>;Encrypt=True;TrustServerCertificate=True;
 ```
 
-## Deploy manual no EKS
+## Configuração necessária
+
+Configure os valores em `GitHub > Settings > Secrets and variables > Actions`.
+
+| Nome | Tipo | Uso |
+|---|---|---|
+| `AWS_ACCESS_KEY_ID` | Secret | Autenticar na AWS |
+| `AWS_SECRET_ACCESS_KEY` | Secret | Autenticar na AWS |
+| `AWS_SESSION_TOKEN` | Secret opcional | Autenticar com credencial temporária |
+| `AWS_REGION` | Secret | Região AWS usada por ECR, EKS e AWS CLI |
+| `ECR_REPOSITORY_URL` | Secret | URL completa do repositório ECR |
+| `EKS_CLUSTER_NAME` | Secret | Nome do cluster EKS |
+| `DB_CONNECTION_STRING` | Secret | Conexão da API com SQL Server |
+| `JWT_SECRET` | Secret | Validar tokens JWT |
+| `JWT_ISSUER` | Secret | Issuer JWT |
+| `JWT_AUDIENCE` | Secret | Audience JWT |
+| `JWT_EXPIRATION_MINUTES` | Secret | Expiração dos tokens |
+| `ADMIN_INICIAL_NOME` | Secret opcional | Usado somente com `enable_initial_admin=true` |
+| `ADMIN_INICIAL_CPF` | Secret opcional | Usado somente com `enable_initial_admin=true` |
+| `ADMIN_INICIAL_SENHA` | Secret opcional | Usado somente com `enable_initial_admin=true` |
+| `EMAIL_SMTP_USERNAME` | Secret opcional | Usuário SMTP, quando necessário |
+| `EMAIL_SMTP_PASSWORD` | Secret opcional | Senha SMTP, quando necessário |
+
+O `JWT_SECRET` deve ser o mesmo usado pelo `oficina-auth-lambda` e ter pelo menos 32 caracteres. Para gerar um valor forte no PowerShell:
+
+```powershell
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 64 | ForEach-Object {[char]$_})
+```
+
+Variables opcionais para SMTP em cloud:
+
+| Nome | Tipo | Uso |
+|---|---|---|
+| `EMAIL_SMTP_HOST` | Variable opcional | Host SMTP |
+| `EMAIL_SMTP_PORT` | Variable opcional | Porta SMTP |
+| `EMAIL_ENABLE_SSL` | Variable opcional | `true` ou `false`; padrão `false` |
+| `EMAIL_FROM` | Variable opcional | Remetente dos e-mails |
+| `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | Variable opcional | URL pública da API nos links de aprovação/recusa |
+
+Se SMTP estiver configurado, informe `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_FROM` e `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO`. Se o provedor exigir autenticação, configure `EMAIL_SMTP_USERNAME` e `EMAIL_SMTP_PASSWORD` juntos.
+
+## Como executar
+
+### Deploy no EKS
 
 Execute manualmente:
 
@@ -105,83 +110,18 @@ GitHub Actions > Deploy API > Run workflow
 
 O input `enable_initial_admin` controla a criação do admin inicial:
 
-- `false`: padrão recomendado para execuções normais.
-- `true`: habilita `AdminInicial__Enabled=true` e exige `ADMIN_INICIAL_NOME`, `ADMIN_INICIAL_CPF` e `ADMIN_INICIAL_SENHA`.
+- `false`: padrão recomendado para execuções normais;
+- `true`: cria o admin inicial e exige `ADMIN_INICIAL_NOME`, `ADMIN_INICIAL_CPF` e `ADMIN_INICIAL_SENHA`.
 
-Use `enable_initial_admin=true` somente quando precisar preparar a primeira autenticação em um banco vazio. O Secret Kubernetes é recriado a cada deploy; quando esse input estiver `false`, as chaves de admin inicial não ficam preservadas no Secret.
+Use `enable_initial_admin=true` apenas na primeira subida de um banco vazio. Depois, execute novo deploy com `enable_initial_admin=false` para remover os dados do Secret Kubernetes recriado pelo workflow.
 
-Quando habilitado, o bootstrap do admin inicial é executado em background com retry limitado. Se a configuração obrigatória estiver ausente ou o banco permanecer indisponível, a API registra erro seguro e continua de pé.
-
-O workflow executa:
-
-- validação de secrets obrigatórios sem imprimir valores;
-- validação segura da configuração SMTP opcional;
-- restore, build e testes da solution;
-- login no ECR antes de qualquer `docker push`;
-- publicação da tag `${GITHUB_SHA}` somente se ela ainda não existir;
-- atualização de `latest` como alias da mesma imagem da tag `${GITHUB_SHA}`;
-- validação de existência das tags `${GITHUB_SHA}` e `latest`;
-- comparação de `imageDigest` entre `${GITHUB_SHA}` e `latest`;
-- configuração do kubeconfig do EKS;
-- aplicação do namespace `oficina`;
-- validação de permissões Kubernetes;
-- criação/atualização de ConfigMap sem dados sensíveis;
-- recriação do Secret da API sem versionar valores, incluindo credenciais SMTP somente quando configuradas em par;
-- execução do Kubernetes Job de migration;
-- deploy da API com Service `LoadBalancer`;
-- validação de rollout, LoadBalancer e `/health` com retry.
-
-As probes Kubernetes são separadas:
-
-- `startupProbe`: usa `/health`, que valida apenas se o processo HTTP está respondendo;
-- `livenessProbe`: usa `/health`;
-- `readinessProbe`: usa `/ready`, que valida a prontidão da API e a conexão com o banco usando timeout curto.
-
-Se a migration falhar ou der timeout, o workflow coleta diagnóstico com:
-
-```powershell
-kubectl describe job oficina-api-migration -n oficina || true
-kubectl get pods -n oficina -l job-name=oficina-api-migration || true
-kubectl logs -n oficina -l job-name=oficina-api-migration --tail=200 || true
-kubectl logs -n oficina -l job-name=oficina-api-migration --previous --tail=200 || true
-```
-
-Se o LoadBalancer ou `/health` falhar, o workflow coleta:
-
-```powershell
-kubectl describe svc oficina-api -n oficina || true
-kubectl get svc oficina-api -n oficina -o yaml || true
-kubectl get endpoints oficina-api -n oficina || true
-kubectl get pods -n oficina -l app=oficina-api || true
-kubectl logs -n oficina -l app=oficina-api --tail=200 || true
-kubectl logs -n oficina -l app=oficina-api --previous --tail=200 || true
-```
-
-
-## Configuração local
+### Execução local com Docker
 
 Crie o arquivo local de variáveis:
 
 ```powershell
 Copy-Item docker/.env.example docker/.env
 ```
-
-O arquivo `docker/.env` configura SQL Server local, API, JWT, e-mail e admin inicial. Não versione `docker/.env`.
-
-O `smtp4dev` é usado apenas no Docker local. O arquivo `docker/.env.example` mantém valores explícitos para admin inicial local:
-
-```text
-ADMIN_INICIAL_ENABLED=true
-ADMIN_INICIAL_NOME=Admin Local
-ADMIN_INICIAL_CPF=39053344705
-ADMIN_INICIAL_SENHA=Senha@123
-```
-
-O envio de e-mail é best-effort: se SMTP estiver ausente ou falhar, a operação principal continua. Quando SMTP não estiver configurado, o sender registra log seguro informando que o e-mail não foi enviado e não tenta conexão.
-
-Depois de usar `enable_initial_admin=true` na primeira subida em cloud, execute um novo deploy com `enable_initial_admin=false`. Isso remove `AdminInicial__Nome`, `AdminInicial__Cpf` e `AdminInicial__Senha` do Secret Kubernetes recriado pelo workflow.
-
-## Execução local com Docker
 
 Suba SQL Server e smtp4dev:
 
@@ -201,7 +141,7 @@ Suba a API:
 docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d api
 ```
 
-## Execução local com dotnet
+### Execução local com dotnet
 
 Rodar a API:
 
@@ -213,15 +153,10 @@ Executar migrations:
 
 ```powershell
 $env:APP_MODE="migration"; dotnet run --project src/Oficina.Api/Oficina.Api.csproj
-```
-
-Limpar a variável:
-
-```powershell
 Remove-Item Env:APP_MODE
 ```
 
-## Testes
+Executar testes:
 
 ```powershell
 dotnet restore Oficina.sln
@@ -229,38 +164,37 @@ dotnet build Oficina.sln --configuration Release --no-restore
 dotnet test Oficina.sln --configuration Release --no-build
 ```
 
-## Validação
+## Como validar
 
-Valide healthcheck local:
+Valide a API local:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/health
 ```
 
-Acesse Swagger:
+Swagger local:
 
 ```text
 http://localhost:8080/swagger
 ```
 
-Valide imagem no ECR:
+Valide a imagem no ECR:
 
 ```powershell
 aws ecr describe-images --repository-name oficina-api --image-ids imageTag=latest --region <region>
 aws ecr describe-images --repository-name oficina-api --image-ids imageTag=<commit-sha> --region <region>
 ```
 
-Valide deploy no EKS:
+Valide o deploy no EKS:
 
 ```powershell
 aws eks update-kubeconfig --name <cluster_name> --region <region>
 kubectl get pods -n oficina
 kubectl get svc oficina-api -n oficina
-kubectl get endpoints oficina-api -n oficina
 kubectl rollout status deployment/oficina-api -n oficina --timeout=300s
 ```
 
-Quando o Service receber hostname ou IP, valide:
+Quando o Service receber hostname ou IP:
 
 ```powershell
 Invoke-RestMethod http://<load-balancer>/health
@@ -277,30 +211,16 @@ postman/OficinaAPI-seguranca.postman_collection.json
 
 Configure `baseUrl=http://localhost:8080` para execução local.
 
-## Outputs para a próxima etapa
-
-Este repositório não gera outputs Terraform. Após a API estar publicada no EKS, os valores operacionais abaixo serão usados pelas próximas etapas.
-
-| Valor | Usado por | Configurar como |
-|---|---|---|
-| URL pública ou load balancer da API | `oficina-infra-k8s` na etapa de API Gateway | `api_load_balancer_url`, quando implementado |
-| Configuração JWT | `oficina-auth-lambda` | `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_EXPIRATION_MINUTES`; mantenha secret, issuer e audience iguais nos dois repositórios |
-| Tag `${GITHUB_SHA}` | Auditoria e rollback | Referência rastreável da versão publicada |
-| Tag `latest` | Operação corrente | Alias mutável da imagem mais recente no ECR |
-
 ## Problemas comuns
 
 | Problema | Possível causa | Como resolver |
 |---|---|---|
 | API não conecta no banco | `DB_CONNECTION_STRING` incorreta | Monte novamente com `db_address`, `db_port` e `db_name` |
-| Push no ECR falha | `ECR_REPOSITORY_URL` ausente ou incorreto | Use o output `ecr_repository_url` do `oficina-infra-k8s` |
+| Push no ECR falha | `ECR_REPOSITORY_URL` ausente ou incorreto | Use `ecr_repository_url` do `oficina-infra-k8s` |
+| Authorizer nega token válido | JWT diferente do configurado nas Lambdas | Alinhe `JWT_SECRET`, `JWT_ISSUER` e `JWT_AUDIENCE` |
 | Tag SHA já existe | Commit já publicado | O workflow preserva a tag imutável e atualiza apenas `latest` |
-| Digest de `latest` diverge do SHA | Alias apontando para outra imagem | Reexecute o workflow e valide a configuração de mutabilidade do ECR |
 | `latest` não atualiza | Exceção mutável não configurada no ECR | Confirme `ecr_mutable_alias_tag=latest` no `oficina-infra-k8s` |
-| Workflow sem permissão no EKS | Usuário/role AWS sem RBAC no cluster | Ajuste permissões antes de executar o deploy |
-| Rollout timeout | Pod não ficou `Ready`, app falhou no startup ou ambiente está lento | Consulte diagnósticos de deployment, pods, logs e events no job `deploy-api` |
-| Migration timeout na primeira subida | Banco, imagem ou node demoraram em ambiente pequeno | O workflow tolera até `300s`; se exceder, consulte logs do Job |
-| Swagger não abre | API não iniciou | Consulte logs do pod |
+| Rollout timeout | Pod não ficou `Ready` ou ambiente está lento | Consulte logs e eventos do deployment no job `deploy-api` |
 | E-mail não envia | SMTP não configurado | O envio é best-effort; configure SMTP apenas quando necessário |
 
 ## Próxima etapa
