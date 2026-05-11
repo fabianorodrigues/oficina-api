@@ -98,7 +98,7 @@ Server=<db_address>,<db_port>;Database=<db_name>;User Id=<db-user>;Password=<db-
 Execute manualmente:
 
 ```text
-GitHub Actions > deploy-api > Run workflow
+GitHub Actions > Deploy API > Run workflow
 ```
 
 O input `enable_initial_admin` controla a criação do admin inicial:
