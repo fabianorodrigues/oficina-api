@@ -391,7 +391,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
 
       - name: Apply namespace
         run: kubectl apply -f k8s/namespace.yaml
@@ -401,7 +401,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          kubectl get nodes
+          kubectl get nodes >/dev/null
 
           require_can_i() {
             local verb="$1"
@@ -520,12 +520,10 @@ jobs:
           set -euo pipefail
 
           diagnose_migration() {
-            kubectl describe job oficina-api-migration -n oficina || true
-            kubectl get pods -n oficina -l job-name=oficina-api-migration -o wide || true
-            kubectl describe pods -n oficina -l job-name=oficina-api-migration || true
-            kubectl logs -n oficina -l job-name=oficina-api-migration --tail=200 || true
-            kubectl logs -n oficina -l job-name=oficina-api-migration --previous --tail=200 || true
-            kubectl get events -n oficina --sort-by=.lastTimestamp || true
+            kubectl get job oficina-api-migration -n oficina --no-headers || true
+            kubectl get pods -n oficina -l job-name=oficina-api-migration --no-headers || true
+            kubectl logs -n oficina -l job-name=oficina-api-migration --tail=100 || true
+            kubectl logs -n oficina -l job-name=oficina-api-migration --previous --tail=100 || true
           }
 
           kubectl delete job oficina-api-migration -n oficina --ignore-not-found=true
@@ -573,7 +571,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
 
       - name: Render deployment manifest
         shell: bash
@@ -601,12 +599,10 @@ jobs:
           set -euo pipefail
 
           diagnose_rollout() {
-            kubectl describe deployment oficina-api -n oficina || true
-            kubectl get pods -n oficina -l app=oficina-api -o wide || true
-            kubectl describe pods -n oficina -l app=oficina-api || true
-            kubectl logs -n oficina -l app=oficina-api --tail=200 || true
-            kubectl logs -n oficina -l app=oficina-api --previous --tail=200 || true
-            kubectl get events -n oficina --sort-by=.lastTimestamp || true
+            kubectl get deployment oficina-api -n oficina --no-headers || true
+            kubectl get pods -n oficina -l app=oficina-api --no-headers || true
+            kubectl logs -n oficina -l app=oficina-api --tail=100 || true
+            kubectl logs -n oficina -l app=oficina-api --previous --tail=100 || true
           }
 
           kubectl apply -f /tmp/oficina-k8s/deployment.yaml
@@ -649,7 +645,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}"
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
 
       - name: Validate service and health
         shell: bash
@@ -657,12 +653,10 @@ jobs:
           set -euo pipefail
 
           diagnose_service() {
-            kubectl describe svc oficina-api -n oficina || true
-            kubectl get svc oficina-api -n oficina -o yaml || true
-            kubectl get endpoints oficina-api -n oficina || true
-            kubectl get pods -n oficina -l app=oficina-api -o wide || true
-            kubectl logs -n oficina -l app=oficina-api --tail=200 || true
-            kubectl logs -n oficina -l app=oficina-api --previous --tail=200 || true
+            kubectl get svc oficina-api -n oficina -o jsonpath='{.metadata.name}{" type="}{.spec.type}{"\n"}' || true
+            kubectl get pods -n oficina -l app=oficina-api --no-headers || true
+            kubectl logs -n oficina -l app=oficina-api --tail=100 || true
+            kubectl logs -n oficina -l app=oficina-api --previous --tail=100 || true
           }
 
           address=""
@@ -689,9 +683,6 @@ jobs:
           for attempt in {1..60}; do
             if curl -fsS "${health_url}" >/dev/null; then
               echo "Health check succeeded."
-              kubectl get pods -n oficina -l app=oficina-api
-              kubectl get svc oficina-api -n oficina
-              kubectl get endpoints oficina-api -n oficina
               exit 0
             fi
 
