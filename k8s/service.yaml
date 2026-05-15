@@ -5,11 +5,17 @@ metadata:
   namespace: oficina
   labels:
     app: oficina-api
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
 spec:
   type: LoadBalancer
+  loadBalancerSourceRanges:
+    - __VPC_CIDR_BLOCK__
   selector:
     app: oficina-api
   ports:
     - name: http
       port: 80
-      targetPort: http
+      targetPort: 8080

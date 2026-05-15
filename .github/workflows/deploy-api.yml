@@ -17,9 +17,11 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ENVIRONMENT: ${{ vars.ENVIRONMENT || 'dev' }}
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || 'oficina' }}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: deploy-api-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -148,7 +150,7 @@ jobs:
           fi
 
           smtp_configured=false
-          if [ -n "${EMAIL_SMTP_HOST:-}" ] || [ "${email_smtp_port}" -gt 0 ] || [ -n "${EMAIL_FROM:-}" ] || [ -n "${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}" ] || [ -n "${EMAIL_SMTP_USERNAME:-}" ] || [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
+          if [ -n "${EMAIL_SMTP_HOST:-}" ] || [ "${email_smtp_port}" -gt 0 ] || [ -n "${EMAIL_FROM:-}" ] || [ -n "${EMAIL_SMTP_USERNAME:-}" ] || [ -n "${EMAIL_SMTP_PASSWORD:-}" ]; then
             smtp_configured=true
           fi
 
@@ -178,10 +180,6 @@ jobs:
               exit 1
             fi
 
-            if [ -z "${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}" ]; then
-              echo "EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO is required when SMTP is configured."
-              exit 1
-            fi
           fi
 
           echo "Required configuration validated."
@@ -447,6 +445,18 @@ jobs:
             email_smtp_port="0"
           fi
 
+          email_base_url="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}"
+          if [ -z "${email_base_url}" ]; then
+            email_base_url="$(aws ssm get-parameter \
+              --name "/oficina/${ENVIRONMENT}/api/public-base-url" \
+              --region "${AWS_REGION}" \
+              --query 'Parameter.Value' \
+              --output text 2>/dev/null || true)"
+            if [ "${email_base_url}" = "None" ]; then
+              email_base_url=""
+            fi
+          fi
+
           kubectl create configmap oficina-api-config \
             -n oficina \
             --from-literal=ASPNETCORE_ENVIRONMENT=Production \
@@ -456,7 +466,7 @@ jobs:
             --from-literal=EmailSettings__SmtpPort="${email_smtp_port}" \
             --from-literal=EmailSettings__EnableSsl="${email_enable_ssl_normalized}" \
             --from-literal=EmailSettings__From="${EMAIL_FROM:-}" \
-            --from-literal=EmailSettings__BaseUrlAprovaRecusaOrcamento="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}" \
+            --from-literal=EmailSettings__BaseUrlAprovaRecusaOrcamento="${email_base_url}" \
             --dry-run=client \
             -o yaml | kubectl apply -f -
 
@@ -522,8 +532,6 @@ jobs:
           diagnose_migration() {
             kubectl get job oficina-api-migration -n oficina --no-headers || true
             kubectl get pods -n oficina -l job-name=oficina-api-migration --no-headers || true
-            kubectl logs -n oficina -l job-name=oficina-api-migration --tail=100 || true
-            kubectl logs -n oficina -l job-name=oficina-api-migration --previous --tail=100 || true
           }
 
           kubectl delete job oficina-api-migration -n oficina --ignore-not-found=true
@@ -573,6 +581,21 @@ jobs:
           set -euo pipefail
           aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
 
+      - name: Validate AWS Load Balancer Controller
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! kubectl get deployment aws-load-balancer-controller -n kube-system >/dev/null; then
+            echo "Falha ao validar AWS Load Balancer Controller."
+            exit 1
+          fi
+
+          if ! kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=180s >/dev/null; then
+            echo "Falha ao validar AWS Load Balancer Controller."
+            exit 1
+          fi
+
       - name: Render deployment manifest
         shell: bash
         run: |
@@ -584,12 +607,39 @@ jobs:
           fi
 
           image_uri="${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
+          vpc_id="$(aws eks describe-cluster \
+            --name "${EKS_CLUSTER_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'cluster.resourcesVpcConfig.vpcId' \
+            --output text 2>/dev/null || true)"
+
+          if [ -z "${vpc_id}" ] || [ "${vpc_id}" = "None" ]; then
+            echo "Falha ao validar AWS Load Balancer Controller."
+            exit 1
+          fi
+
+          vpc_cidr_block="$(aws ec2 describe-vpcs \
+            --vpc-ids "${vpc_id}" \
+            --region "${AWS_REGION}" \
+            --query 'Vpcs[0].CidrBlock' \
+            --output text 2>/dev/null || true)"
+
+          if [ -z "${vpc_cidr_block}" ] || [ "${vpc_cidr_block}" = "None" ]; then
+            echo "Falha ao validar AWS Load Balancer Controller."
+            exit 1
+          fi
 
           mkdir -p /tmp/oficina-k8s
           sed "s|__IMAGE__|${image_uri}|g" k8s/deployment.yaml > /tmp/oficina-k8s/deployment.yaml
+          sed "s|__VPC_CIDR_BLOCK__|${vpc_cidr_block}|g" k8s/service.yaml > /tmp/oficina-k8s/service.yaml
 
-          if grep -R "__IMAGE__" /tmp/oficina-k8s/deployment.yaml; then
+          if grep -q "__IMAGE__" /tmp/oficina-k8s/deployment.yaml; then
             echo "Rendered deployment manifest still contains __IMAGE__ placeholder."
+            exit 1
+          fi
+
+          if grep -q "__VPC_CIDR_BLOCK__" /tmp/oficina-k8s/service.yaml; then
+            echo "Rendered service manifest still contains __VPC_CIDR_BLOCK__ placeholder."
             exit 1
           fi
 
@@ -601,12 +651,10 @@ jobs:
           diagnose_rollout() {
             kubectl get deployment oficina-api -n oficina --no-headers || true
             kubectl get pods -n oficina -l app=oficina-api --no-headers || true
-            kubectl logs -n oficina -l app=oficina-api --tail=100 || true
-            kubectl logs -n oficina -l app=oficina-api --previous --tail=100 || true
           }
 
           kubectl apply -f /tmp/oficina-k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
+          kubectl apply -f /tmp/oficina-k8s/service.yaml
           kubectl annotate deployment oficina-api -n oficina redeployTimestamp="$(date +%s)" --overwrite
 
           if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=300s; then
@@ -655,40 +703,87 @@ jobs:
           diagnose_service() {
             kubectl get svc oficina-api -n oficina -o jsonpath='{.metadata.name}{" type="}{.spec.type}{"\n"}' || true
             kubectl get pods -n oficina -l app=oficina-api --no-headers || true
-            kubectl logs -n oficina -l app=oficina-api --tail=100 || true
-            kubectl logs -n oficina -l app=oficina-api --previous --tail=100 || true
           }
 
-          address=""
+          lb_hostname=""
           for attempt in {1..80}; do
-            address="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
-            if [ -z "${address}" ]; then
-              address="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
-            fi
-
-            if [ -n "${address}" ]; then
+            lb_hostname="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+            if [ -n "${lb_hostname}" ]; then
               break
             fi
 
             sleep 15
           done
 
-          if [ -z "${address}" ]; then
-            echo "LoadBalancer did not receive a hostname or IP before timeout."
+          if [ -z "${lb_hostname}" ]; then
+            echo "Falha ao localizar LoadBalancer interno da API."
             diagnose_service
             exit 1
           fi
 
-          health_url="http://${address}/health"
+          lb_info="$(aws elbv2 describe-load-balancers \
+            --region "${AWS_REGION}" \
+            --query "LoadBalancers[?DNSName=='${lb_hostname}'].[LoadBalancerArn,Type,Scheme]" \
+            --output text || true)"
+          read -r lb_arn lb_type lb_scheme <<<"${lb_info}"
+
+          if [ -z "${lb_arn:-}" ] || [ "${lb_arn:-}" = "None" ]; then
+            echo "Falha ao localizar LoadBalancer interno da API."
+            exit 1
+          fi
+
+          if [ "${lb_type}" != "network" ] || [ "${lb_scheme}" != "internal" ]; then
+            echo "Falha ao localizar LoadBalancer interno da API."
+            exit 1
+          fi
+
+          listener_info="$(aws elbv2 describe-listeners \
+            --load-balancer-arn "${lb_arn}" \
+            --region "${AWS_REGION}" \
+            --query 'Listeners[?Port==`80`].[ListenerArn,DefaultActions[0].TargetGroupArn]' \
+            --output text || true)"
+          read -r listener_arn target_group_arn <<<"${listener_info}"
+
+          if [ -z "${listener_arn:-}" ] || [ "${listener_arn:-}" = "None" ] || [ -z "${target_group_arn:-}" ] || [ "${target_group_arn:-}" = "None" ]; then
+            echo "Falha ao validar listener 80 do LoadBalancer interno."
+            exit 1
+          fi
+
+          kubectl port-forward svc/oficina-api -n oficina 18080:80 >/tmp/oficina-api-port-forward.log 2>&1 &
+          port_forward_pid="$!"
+          trap 'kill "${port_forward_pid}" >/dev/null 2>&1 || true' EXIT
+
           for attempt in {1..60}; do
-            if curl -fsS "${health_url}" >/dev/null; then
+            if curl -fsS "http://127.0.0.1:18080/health" >/dev/null; then
               echo "Health check succeeded."
-              exit 0
+              break
             fi
 
             sleep 10
           done
 
-          echo "Health check did not succeed before timeout."
-          diagnose_service
-          exit 1
+          if ! curl -fsS "http://127.0.0.1:18080/health" >/dev/null; then
+            echo "Health check did not succeed before timeout."
+            diagnose_service
+            exit 1
+          fi
+
+          parameter_name="/oficina/${ENVIRONMENT}/api/backend-listener-arn"
+          if aws ssm get-parameter --name "${parameter_name}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+            aws ssm put-parameter \
+              --name "${parameter_name}" \
+              --type String \
+              --value "${listener_arn}" \
+              --overwrite \
+              --region "${AWS_REGION}" >/dev/null
+          else
+            aws ssm put-parameter \
+              --name "${parameter_name}" \
+              --type String \
+              --value "${listener_arn}" \
+              --overwrite \
+              --tags Key=Project,Value="${PROJECT_NAME}" Key=Environment,Value="${ENVIRONMENT}" Key=ManagedBy,Value=github-actions \
+              --region "${AWS_REGION}" >/dev/null
+          fi
+
+          echo "Internal load balancer and health check validated."
