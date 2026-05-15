@@ -389,7 +389,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null 2>&1
 
       - name: Apply namespace
         run: kubectl apply -f k8s/namespace.yaml
@@ -579,19 +579,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null 2>&1
 
       - name: Validate AWS Load Balancer Controller
         shell: bash
         run: |
           set -euo pipefail
 
-          if ! kubectl get deployment aws-load-balancer-controller -n kube-system >/dev/null; then
+          if ! kubectl get deployment aws-load-balancer-controller -n kube-system >/dev/null 2>&1; then
             echo "Falha ao validar AWS Load Balancer Controller."
             exit 1
           fi
 
-          if ! kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=180s >/dev/null; then
+          if ! kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=180s >/dev/null 2>&1; then
             echo "Falha ao validar AWS Load Balancer Controller."
             exit 1
           fi
@@ -693,12 +693,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null
+          aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null 2>&1
 
       - name: Validate service and health
         shell: bash
         run: |
           set -euo pipefail
+
+          load_balancer_failure_message="Falha ao localizar LoadBalancer interno da API. Verifique se o AWS Load Balancer Controller possui permissões suficientes no modo configurado."
 
           diagnose_service() {
             kubectl get svc oficina-api -n oficina -o jsonpath='{.metadata.name}{" type="}{.spec.type}{"\n"}' || true
@@ -716,8 +718,7 @@ jobs:
           done
 
           if [ -z "${lb_hostname}" ]; then
-            echo "Falha ao localizar LoadBalancer interno da API."
-            diagnose_service
+            echo "${load_balancer_failure_message}"
             exit 1
           fi
 
@@ -728,12 +729,12 @@ jobs:
           read -r lb_arn lb_type lb_scheme <<<"${lb_info}"
 
           if [ -z "${lb_arn:-}" ] || [ "${lb_arn:-}" = "None" ]; then
-            echo "Falha ao localizar LoadBalancer interno da API."
+            echo "${load_balancer_failure_message}"
             exit 1
           fi
 
           if [ "${lb_type}" != "network" ] || [ "${lb_scheme}" != "internal" ]; then
-            echo "Falha ao localizar LoadBalancer interno da API."
+            echo "${load_balancer_failure_message}"
             exit 1
           fi
 
