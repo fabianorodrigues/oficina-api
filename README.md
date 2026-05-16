@@ -102,10 +102,6 @@ Configure em `GitHub > Settings > Secrets and variables > Actions`.
 | `EMAIL_ENABLE_SSL` | Variable | — | `true` ou `false` (obrigatório se SMTP habilitado) |
 | `EMAIL_FROM` | Variable | — | Endereço de origem (obrigatório se SMTP habilitado) |
 | `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | Variable | SSM `public-base-url` ou vazio | URL base para links em e-mails |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | — | Endpoint OTLP opcional; vazio ou inválido desabilita exportação externa sem bloquear deploy |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | Variable | `http/protobuf` | Protocolo OTLP (`http/protobuf` ou `grpc`); valor inválido desabilita exportação externa |
-| `OTEL_RESOURCE_ATTRIBUTES` | Variable | `deployment.environment=<ambiente>,service.namespace=oficina` | Atributos OpenTelemetry extras do recurso |
-| `OTEL_EXPORTER_OTLP_HEADERS` | Secret | — | Headers do exportador OTLP, por exemplo `api-key=<chave>` |
 
 ### Auto-provisionados pelo workflow
 
@@ -267,25 +263,14 @@ A API usa OpenTelemetry/OTLP como contrato de observabilidade independente de fo
 | Nome | Tipo | Obrigatório quando habilitado | Default | Descrição |
 | --- | --- | --- | --- | --- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | Não | — | Endpoint OTLP do backend escolhido; vazio ou inválido mantém a API sem exportação externa |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | Variable | Não | `http/protobuf` | Protocolo OTLP (`http/protobuf` ou `grpc`); inválido desabilita o exportador |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Secret | Quando o backend exigir | — | Headers do exportador OTLP, por exemplo autenticação |
-| `OTEL_RESOURCE_ATTRIBUTES` | Variable | Não | `deployment.environment=<ambiente>,service.namespace=oficina` | Atributos OpenTelemetry adicionados ao recurso |
 
-Variáveis aplicadas no pod:
-
-- `OTEL_SERVICE_NAME=oficina-api`
-- `OTEL_EXPORTER_OTLP_ENDPOINT`
-- `OTEL_EXPORTER_OTLP_PROTOCOL`
-- `OTEL_RESOURCE_ATTRIBUTES`
-- `OTEL_EXPORTER_OTLP_HEADERS` via Secret K8s, somente quando configurado
-
-Os logs JSON estruturados pelo Serilog são sempre emitidos, independentemente da configuração OTLP. Se `OTEL_EXPORTER_OTLP_ENDPOINT` ou `OTEL_EXPORTER_OTLP_PROTOCOL` estiverem inválidos, o workflow registra aviso e desliga a exportação OTLP para não interferir no deploy.
+Os logs JSON estruturados pelo Serilog são sempre emitidos, independentemente da configuração OTLP. Se `OTEL_EXPORTER_OTLP_ENDPOINT` estiver inválido, o workflow registra aviso e desliga a exportação OTLP para não interferir no deploy.
 
 Exemplo New Relic US:
 
 ```text
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net
-OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_EXPORTER_OTLP_HEADERS=api-key=<license-key>
 ```
 
