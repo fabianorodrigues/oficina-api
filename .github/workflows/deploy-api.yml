@@ -380,6 +380,9 @@ jobs:
       EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO: ${{ vars.EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO }}
       EMAIL_SMTP_USERNAME: ${{ secrets.EMAIL_SMTP_USERNAME }}
       EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+      NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+      NEW_RELIC_REGION: ${{ vars.NEW_RELIC_REGION || 'US' }}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
       ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
 
     steps:
@@ -457,6 +460,26 @@ jobs:
             email_smtp_port="0"
           fi
 
+          new_relic_region="$(printf '%s' "${NEW_RELIC_REGION:-US}" | tr '[:lower:]' '[:upper:]')"
+          otel_endpoint=""
+          if [ -n "${NEW_RELIC_LICENSE_KEY:-}" ]; then
+            otel_endpoint="${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+            if [ -z "${otel_endpoint}" ]; then
+              case "${new_relic_region}" in
+                EU)
+                  otel_endpoint="https://otlp.eu01.nr-data.net"
+                  ;;
+                US)
+                  otel_endpoint="https://otlp.nr-data.net"
+                  ;;
+                *)
+                  echo "NEW_RELIC_REGION must be US or EU when NEW_RELIC_LICENSE_KEY is configured."
+                  exit 1
+                  ;;
+              esac
+            fi
+          fi
+
           email_base_url="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}"
           if [ -z "${email_base_url}" ]; then
             email_base_url="$(aws ssm get-parameter \
@@ -473,6 +496,9 @@ jobs:
             -n oficina \
             --from-literal=ASPNETCORE_ENVIRONMENT=Production \
             --from-literal=ASPNETCORE_URLS=http://+:8080 \
+            --from-literal=OTEL_SERVICE_NAME=oficina-api \
+            --from-literal=OTEL_EXPORTER_OTLP_ENDPOINT="${otel_endpoint}" \
+            --from-literal=OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
             --from-literal=AdminInicial__Enabled="${ENABLE_INITIAL_ADMIN}" \
             --from-literal=EmailSettings__SmtpHost="${EMAIL_SMTP_HOST:-}" \
             --from-literal=EmailSettings__SmtpPort="${email_smtp_port}" \
@@ -501,6 +527,12 @@ jobs:
             secret_args+=(
               --from-literal=EmailSettings__Username="${EMAIL_SMTP_USERNAME}"
               --from-literal=EmailSettings__Password="${EMAIL_SMTP_PASSWORD}"
+            )
+          fi
+
+          if [ -n "${NEW_RELIC_LICENSE_KEY:-}" ]; then
+            secret_args+=(
+              --from-literal=OTEL_EXPORTER_OTLP_HEADERS="api-key=${NEW_RELIC_LICENSE_KEY}"
             )
           fi
 

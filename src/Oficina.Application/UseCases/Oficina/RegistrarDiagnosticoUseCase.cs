@@ -1,10 +1,13 @@
-using Oficina.Application.Shared;
-using Oficina.Application.Common;
-using Oficina.Application.DTO.Oficina;
-using Oficina.Domain.Oficina.Enums;
-using Oficina.Domain.Oficina;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Oficina.Application.Abstractions.Notificacoes;
 using Oficina.Application.Abstractions.Repositorios;
+using Oficina.Application.Common;
+using Oficina.Application.DTO.Oficina;
+using Oficina.Application.Observability;
+using Oficina.Application.Shared;
+using Oficina.Domain.Oficina;
+using Oficina.Domain.Oficina.Enums;
 
 namespace Oficina.Application.UseCases.Oficina;
 
@@ -14,44 +17,64 @@ public class RegistrarDiagnosticoUseCase
     private readonly IOficinaRepository _oficina;
     private readonly ICatalogoEstoqueRepository _catalogo;
     private readonly INotificadorCliente _notificador;
+    private readonly ILogger<RegistrarDiagnosticoUseCase> _logger;
 
     public RegistrarDiagnosticoUseCase(
         IOficinaRepository oficina,
         ICatalogoEstoqueRepository catalogo,
-        INotificadorCliente notificador)
+        INotificadorCliente notificador,
+        ILogger<RegistrarDiagnosticoUseCase>? logger = null)
     {
         _oficina = oficina;
         _catalogo = catalogo;
         _notificador = notificador;
+        _logger = logger ?? NullLogger<RegistrarDiagnosticoUseCase>.Instance;
     }
 
     public async Task<RegistrarDiagnosticoResponse> Executar(Guid ordemServicoId, string descricao, IReadOnlyList<Guid> servicoIds, CancellationToken ct)
     {
-        var os = await _oficina.ObterOrdemServico(ordemServicoId, ct)
-                 ?? throw new OficinaException("Ordem de serviço não encontrada.", 404);
-
-        var orcamentoExistente = await _oficina.ObterOrcamentoPorOs(ordemServicoId, ct);
-        if (orcamentoExistente is not null)
-            throw new OficinaException("Ordem de servico ja possui orcamento.", 409);
-
-        os.RegistrarDiagnostico(descricao, servicoIds);
-        await _oficina.Salvar(ct);
-
-        var orcamento = await GerarOrcamento(os.Id, servicoIds, ct);
-        orcamento.DefinirTokenAcaoExterna(
-            TokenAcaoExternaGenerator.Gerar(),
-            DateTimeOffset.UtcNow.Add(PrazoExpiracaoAcaoExterna));
-        os.VincularOrcamento(orcamento.Id);
-
-        await _oficina.AdicionarOrcamento(orcamento, ct);
-        await _oficina.Salvar(ct);
-
-        await _notificador.NotificarOrcamentoCriado(orcamento.Id, os.Id, ct);
-
-        return new RegistrarDiagnosticoResponse
+        try
         {
-            OrcamentoId = orcamento.Id
-        };
+            var os = await _oficina.ObterOrdemServico(ordemServicoId, ct)
+                     ?? throw new OficinaException("Ordem de serviÃ§o nÃ£o encontrada.", 404);
+
+            var orcamentoExistente = await _oficina.ObterOrcamentoPorOs(ordemServicoId, ct);
+            if (orcamentoExistente is not null)
+                throw new OficinaException("Ordem de servico ja possui orcamento.", 409);
+
+            var statusAnterior = os.Status;
+            var dataStatusAnterior = os.DataUltimaAtualizacaoStatus;
+
+            os.RegistrarDiagnostico(descricao, servicoIds);
+            await _oficina.Salvar(ct);
+
+            var orcamento = await GerarOrcamento(os.Id, servicoIds, ct);
+            orcamento.DefinirTokenAcaoExterna(
+                TokenAcaoExternaGenerator.Gerar(),
+                DateTimeOffset.UtcNow.Add(PrazoExpiracaoAcaoExterna));
+            os.VincularOrcamento(orcamento.Id);
+
+            await _oficina.AdicionarOrcamento(orcamento, ct);
+            await _oficina.Salvar(ct);
+
+            _logger.OrdemServicoStatusAlterado(os, statusAnterior, dataStatusAnterior);
+
+            await _notificador.NotificarOrcamentoCriado(orcamento.Id, os.Id, ct);
+
+            return new RegistrarDiagnosticoResponse
+            {
+                OrcamentoId = orcamento.Id
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.OrdemServicoFalha(ex, ordemServicoId);
+            throw;
+        }
     }
 
     private async Task<Orcamento> GerarOrcamento(Guid osId, IEnumerable<Guid> servicoIds, CancellationToken ct)
@@ -63,7 +86,7 @@ public class RegistrarDiagnosticoUseCase
         foreach (var servicoId in servicoIds)
         {
             var servico = await _catalogo.ObterServico(servicoId, ct)
-                         ?? throw new OficinaException($"Serviço não encontrado: {servicoId}", 404);
+                         ?? throw new OficinaException($"ServiÃ§o nÃ£o encontrado: {servicoId}", 404);
 
             itensServico.Add(new OrcamentoItemServico(servico.Id, servico.MaoDeObra));
             total += servico.MaoDeObra;
@@ -71,7 +94,7 @@ public class RegistrarDiagnosticoUseCase
             foreach (var p in servico.Pecas)
             {
                 var peca = await _catalogo.ObterPeca(p.PecaId, ct)
-                           ?? throw new OficinaException($"Peça não encontrada: {p.PecaId}", 404);
+                           ?? throw new OficinaException($"PeÃ§a nÃ£o encontrada: {p.PecaId}", 404);
 
                 itensMaterial.Add(new OrcamentoItemMaterial(TipoMaterial.Peca, peca.Id, p.Quantidade, peca.PrecoUnitario));
                 total += p.Quantidade * peca.PrecoUnitario;
@@ -80,7 +103,7 @@ public class RegistrarDiagnosticoUseCase
             foreach (var ins in servico.Insumos)
             {
                 var insumo = await _catalogo.ObterInsumo(ins.InsumoId, ct)
-                            ?? throw new OficinaException($"Insumo não encontrado: {ins.InsumoId}", 404);
+                            ?? throw new OficinaException($"Insumo nÃ£o encontrado: {ins.InsumoId}", 404);
 
                 itensMaterial.Add(new OrcamentoItemMaterial(TipoMaterial.Insumo, insumo.Id, ins.Quantidade, insumo.PrecoUnitario));
                 total += ins.Quantidade * insumo.PrecoUnitario;

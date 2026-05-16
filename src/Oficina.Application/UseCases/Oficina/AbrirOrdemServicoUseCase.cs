@@ -1,6 +1,9 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Oficina.Application.Abstractions.Repositorios;
 using Oficina.Application.Common;
 using Oficina.Application.DTO.Oficina;
+using Oficina.Application.Observability;
 using Oficina.Application.Shared;
 using Oficina.Domain.Cadastro;
 using Oficina.Domain.Cadastro.ValueObjects;
@@ -15,51 +18,71 @@ public class AbrirOrdemServicoUseCase
     private readonly ICadastroRepository _cadastro;
     private readonly ICatalogoEstoqueRepository _catalogo;
     private readonly IOficinaRepository _oficina;
+    private readonly ILogger<AbrirOrdemServicoUseCase> _logger;
 
     public AbrirOrdemServicoUseCase(
         ICadastroRepository cadastro,
         ICatalogoEstoqueRepository catalogo,
-        IOficinaRepository oficina)
+        IOficinaRepository oficina,
+        ILogger<AbrirOrdemServicoUseCase>? logger = null)
     {
         _cadastro = cadastro;
         _catalogo = catalogo;
         _oficina = oficina;
+        _logger = logger ?? NullLogger<AbrirOrdemServicoUseCase>.Instance;
     }
 
     public async Task<AbrirOrdemServicoResponse> Executar(AbrirOrdemServicoRequest req, CancellationToken ct)
     {
-        var cliente = await ObterOuCriarCliente(req.Cliente, ct);
-        var veiculo = await ObterOuCriarVeiculo(cliente.Id, req.Veiculo, ct);
-        var servicoIds = req.Itens.Servicos.Select(x => x.ServicoId).Where(x => x != Guid.Empty).Distinct().ToList();
-        var tipo = ObterTipoManutencao(req.TipoManutencao);
-        var os = CriarOrdemServico(veiculo.Id, tipo, servicoIds);
-        var total = 0m;
+        OrdemServico? os = null;
 
-        if (DeveGerarOrcamento(tipo, servicoIds))
+        try
         {
-            var (valorTotal, itensServico, itensMaterial) = await CalcularTotal(req, ct);
-            total = valorTotal;
+            var cliente = await ObterOuCriarCliente(req.Cliente, ct);
+            var veiculo = await ObterOuCriarVeiculo(cliente.Id, req.Veiculo, ct);
+            var servicoIds = req.Itens.Servicos.Select(x => x.ServicoId).Where(x => x != Guid.Empty).Distinct().ToList();
+            var tipo = ObterTipoManutencao(req.TipoManutencao);
+            os = CriarOrdemServico(veiculo.Id, tipo, servicoIds);
+            var total = 0m;
 
-            var orcamento = new Orcamento(os.Id, total);
-            orcamento.DefinirTokenAcaoExterna(
-               TokenAcaoExternaGenerator.Gerar(),
-               DateTimeOffset.UtcNow.Add(PrazoExpiracaoAcaoExterna));
-            orcamento.DefinirItensServico(itensServico);
-            orcamento.DefinirItensMaterial(itensMaterial);
+            if (DeveGerarOrcamento(tipo, servicoIds))
+            {
+                var (valorTotal, itensServico, itensMaterial) = await CalcularTotal(req, ct);
+                total = valorTotal;
 
-            os.VincularOrcamento(orcamento.Id, atualizarStatusParaAguardando: false);
-            await _oficina.AdicionarOrcamento(orcamento, ct);
+                var orcamento = new Orcamento(os.Id, total);
+                orcamento.DefinirTokenAcaoExterna(
+                   TokenAcaoExternaGenerator.Gerar(),
+                   DateTimeOffset.UtcNow.Add(PrazoExpiracaoAcaoExterna));
+                orcamento.DefinirItensServico(itensServico);
+                orcamento.DefinirItensMaterial(itensMaterial);
+
+                os.VincularOrcamento(orcamento.Id, atualizarStatusParaAguardando: false);
+                await _oficina.AdicionarOrcamento(orcamento, ct);
+            }
+
+            await _oficina.AdicionarOrdemServico(os, ct);
+            await _oficina.Salvar(ct);
+
+            _logger.OrdemServicoCriada(os);
+            _logger.OrdemServicoStatusAlterado(os, StatusOrdemServico.Recebida, default);
+
+            return new AbrirOrdemServicoResponse
+            {
+                Id = os.Id,
+                Status = os.Status.ToString(),
+                Total = total
+            };
         }
-
-        await _oficina.AdicionarOrdemServico(os, ct);
-        await _oficina.Salvar(ct);
-
-        return new AbrirOrdemServicoResponse
+        catch (OperationCanceledException)
         {
-            Id = os.Id,
-            Status = os.Status.ToString(),
-            Total = total
-        };
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.OrdemServicoFalha(ex, os?.Id);
+            throw;
+        }
     }
 
     private static TipoManutencao ObterTipoManutencao(string? tipoManutencao)
