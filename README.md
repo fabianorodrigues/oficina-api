@@ -146,28 +146,67 @@ kubectl get svc oficina-api -n oficina -o jsonpath='{.spec.type}{" nodePort="}{.
 aws ssm get-parameter --name "/$($env:PROJECT_NAME)/$($env:ENVIRONMENT)/api/backend-listener-arn" --region $env:AWS_REGION --query "Parameter.Name"
 ```
 
-Health check e Swagger via port-forward:
+### Health check e Swagger via port-forward
+
+O Swagger não é exposto pelo API Gateway — apenas `/health` e `/api/*` são roteados publicamente. Para acessar o Swagger ou testar endpoints diretamente no pod, use `kubectl port-forward`:
+
+**1. Abra o túnel (mantenha este terminal aberto):**
 
 ```powershell
 kubectl port-forward svc/oficina-api -n oficina 18080:80
+```
+
+**2. Em outro terminal, valide o health check:**
+
+```powershell
 Invoke-RestMethod http://127.0.0.1:18080/health
 ```
 
-Swagger (disponível via port-forward):
+**3. No browser, acesse o Swagger:**
 
-```text
+```
 http://localhost:18080/swagger
 ```
 
-Postman (disponível apenas após o passo 5 — API Gateway):
+> O túnel encerra quando o terminal for fechado. Enquanto estiver aberto, a porta `18080` local aponta diretamente para o pod no EKS, sem passar pelo API Gateway.
 
+### Testes via Postman Runner
+
+**Pré-requisito:** passo 5 (API Gateway) concluído para usar a URL pública. Para ambiente local ou port-forward, qualquer etapa serve.
+
+**Arquivos:**
 - Collection: `postman/OficinaAPI-cenarios.postman_collection.json`
 - Environment: `postman/OficinaAPI-cenarios.postman_environment.json`
-- Configure a variável `base_url` com a URL pública do API Gateway:
+
+**Variáveis obrigatórias — configure apenas estas três antes de rodar:**
+
+| Variável | Descrição |
+|----------|-----------|
+| `baseUrl` | URL base da API (ver abaixo) |
+| `adminCpf` | CPF do admin inicial (`ADMIN_INICIAL_CPF`) |
+| `adminSenha` | Senha do admin inicial (`ADMIN_INICIAL_SENHA`) |
+
+> Todas as demais variáveis (tokens, IDs, CPFs de teste) são geradas e gerenciadas automaticamente pelos scripts da collection durante a execução.
+
+**Como obter o `baseUrl` conforme o ambiente:**
 
 ```powershell
+# AWS — URL pública do API Gateway (passo 5 concluído)
 aws ssm get-parameter --name "/$($env:PROJECT_NAME)/$($env:ENVIRONMENT)/api/public-base-url" --region $env:AWS_REGION --query "Parameter.Value" --output text
+
+# AWS — via port-forward (kubectl port-forward ativo na porta 18080)
+# baseUrl = http://127.0.0.1:18080
+
+# Local — Docker Compose
+# baseUrl = http://localhost:8080
 ```
+
+**Como executar via Runner:**
+
+1. Abra o Postman e importe a collection e o environment acima
+2. Selecione o environment importado e preencha as três variáveis obrigatórias
+3. Clique com o botão direito na collection > **Run collection**
+4. Confirme que todas as requisições estão selecionadas e clique em **Run**
 
 ## Como executar localmente
 
