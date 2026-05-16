@@ -2,7 +2,12 @@
 
 ## Visão geral
 
-API REST principal da solução Oficina, implementada em .NET 10. Gerencia clientes, veículos, serviços, peças, estoque, ordens de serviço, diagnósticos, orçamentos e autorização JWT. É publicada no EKS e fica atrás do API Gateway provisionado pelo `oficina-infra-k8s`.
+API REST principal da solução Oficina, implementada em .NET 10. Gerencia clientes, veículos, serviços, peças, estoque, ordens de serviço, diagnósticos, orçamentos e autorização JWT.
+
+- Constrói a imagem Docker da API e publica no ECR (taggeada com `commit-sha` e `latest`).
+- Aplica K8s Job de migrations no RDS antes do Deployment.
+- Aplica Deployment + Service (NodePort no modo `terraform_nlb`, LoadBalancer interno no modo `aws_lbc`).
+- No modo `aws_lbc`, grava o Listener ARN do NLB no SSM após o Service subir.
 
 ## Tecnologias utilizadas
 
@@ -18,7 +23,7 @@ API REST principal da solução Oficina, implementada em .NET 10. Gerencia clien
 
 ## Solução integrada
 
-A solução Oficina é composta por 4 repositórios independentes que, juntos, formam um sistema de gestão de oficina mecânica na AWS.
+A solução Oficina é composta por 4 repositórios que formam um sistema de gestão de oficina mecânica na AWS.
 
 ```mermaid
 graph LR
@@ -30,118 +35,87 @@ graph LR
   API --> APIGW
 ```
 
-| Passo | Repositório | Workflow | Quando aplicar |
-|---|---|---|---|
-| 1 | `oficina-infra-db` | Terraform Apply | sempre |
-| 2 | `oficina-infra-k8s` root `terraform` (core) | Terraform Apply | sempre |
-| 2a | `oficina-infra-k8s` root `terraform/addons` | Terraform Apply | apenas se `LOAD_BALANCER_PROVISIONING_MODE=aws_lbc` |
-| 3 | `oficina-api` | Deploy API | sempre |
-| 4 | `oficina-auth-lambda` | Deploy Lambda | sempre |
-| 5 | `oficina-infra-k8s` root `terraform/api-gateway` | Terraform API Gateway Apply | sempre |
-| 6 | `oficina-api` | Deploy API (redeploy) | se o pod precisar refletir `public-base-url` recém-criado em e-mails |
+| Passo | Repositório | Quando aplicar |
+|---|---|---|
+| 1 | [oficina-infra-db](https://github.com/fabianorodrigues/oficina-infra-db) | sempre |
+| 2 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — core | sempre |
+| 2a | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — addons | apenas se `LOAD_BALANCER_PROVISIONING_MODE=aws_lbc` |
+| 3 | [oficina-api](https://github.com/fabianorodrigues/oficina-api) | sempre |
+| 4 | [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) | sempre |
+| 5 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — api-gateway | sempre |
+| 6 | [oficina-api](https://github.com/fabianorodrigues/oficina-api) — redeploy | se o pod precisar refletir `public-base-url` em e-mails |
 
 Cada README detalha apenas a responsabilidade do seu repositório. Para o passo a passo dos demais, consulte os READMEs correspondentes.
-
-## Responsabilidade deste repositório
-
-- Constrói a imagem Docker da API e publica no ECR (taggeada com `commit-sha` e `latest`).
-- Aplica K8s Job de migrations no RDS antes do Deployment.
-- Aplica Deployment + Service (NodePort no modo `terraform_nlb`, LoadBalancer interno no modo `aws_lbc`).
-- No modo `aws_lbc`, grava o Listener ARN do NLB criado pelo Load Balancer Controller no SSM.
 
 ## Arquitetura
 
 ```mermaid
 graph LR
-  GH[GitHub Actions deploy-api] --> BUILD[Build e testes .NET 10]
-  BUILD --> ECR[(ECR Repository)]
-  ECR --> KCFG[aws eks update-kubeconfig]
-  KCFG --> CFG[ConfigMap + Secret K8s]
-  CFG --> JOB[Job Migration]
-  JOB --> RDS[(RDS SQL Server)]
-  JOB --> DEP[Deployment oficina-api]
-  DEP --> SVC{Service}
-  SVC -. terraform_nlb .-> NLB[NLB existente]
-  SVC -. aws_lbc .-> LBCSVC[NLB criado pelo Load Balancer Controller]
-  GH -. modo aws_lbc .-> SSM[(SSM backend-listener-arn)]
-  DEP --> HC[health check via port-forward]
+  GH[GitHub Actions] --> BUILD[Build .NET 10]
+  BUILD --> ECR[(ECR)]
+  ECR --> MIG[Job Migration]
+  MIG --> RDS[(RDS SQL Server)]
+  MIG --> DEP[Deployment K8s]
+  DEP --> SVC[Service + NLB]
+  DEP --> HC[health check]
 ```
 
-## Valores consumidos
+## Configuração
 
-| Origem | Valor | Como é consumido |
-| --- | --- | --- |
-| `oficina-infra-db` | endpoint, porta e nome do banco | compõem `DB_CONNECTION_STRING` configurado como Secret |
-| `oficina-infra-k8s` (root core) | `ECR Repository URL`, `EKS Cluster Name` | Secret `ECR_REPOSITORY_URL` e Variable `EKS_CLUSTER_NAME` |
-| `oficina-infra-k8s` (root api-gateway) | SSM `/<projeto>/<ambiente>/api/public-base-url` | lido pelo workflow para compor links em e-mails |
-| `oficina-auth-lambda` | JWT `secret/issuer/audience/expiration` | devem ser **idênticos** aos configurados no `oficina-auth-lambda` |
+Configure em `GitHub > Settings > Secrets and variables > Actions`.
 
-## Valores gerados
-
-- Imagem Docker no ECR, com tag `commit-sha` (imutável) e `latest`.
-- Namespace `oficina` no EKS, ConfigMap `oficina-api-config` e Secret `oficina-api-secret`.
-- Deployment `oficina-api` e Service correspondente ao modo selecionado.
-- No modo `aws_lbc`, parâmetro SSM `/<projeto>/<ambiente>/api/backend-listener-arn` consumido pelo root `api-gateway` do `oficina-infra-k8s`.
-
-## Configuração necessária
-
-> **JWT idêntico**: `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE` e `JWT_EXPIRATION_MINUTES` devem ser os mesmos valores configurados no `oficina-auth-lambda`. Tokens emitidos pela Lambda só são validados pela API se as quatro variáveis baterem.
+> **JWT idêntico**: `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE` e `JWT_EXPIRATION_MINUTES` devem ser os mesmos valores configurados no [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda). Tokens emitidos pela Lambda só são validados pela API se as quatro variáveis baterem.
 
 > **SMTP tudo ou nada**: se quaisquer das variáveis SMTP estiverem preenchidas, todas as quatro (`EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_ENABLE_SSL`, `EMAIL_FROM`) devem estar presentes em conjunto com `EMAIL_SMTP_USERNAME` e `EMAIL_SMTP_PASSWORD`. Caso contrário, o workflow falha na validação.
 
-### Secrets obrigatórios
+### Obrigatório
 
-| Nome | Origem ou Default | Descrição |
+| Nome | Tipo | Descrição |
 | --- | --- | --- |
-| `AWS_ACCESS_KEY_ID` | — | Credencial AWS |
-| `AWS_SECRET_ACCESS_KEY` | — | Credencial AWS |
-| `AWS_REGION` | — | Região AWS |
-| `ECR_REPOSITORY_URL` | Output de `oficina-infra-k8s` (root core) | URL completa do repositório ECR |
-| `EKS_CLUSTER_NAME` | Output de `oficina-infra-k8s` (root core) | Nome do cluster EKS |
-| `DB_CONNECTION_STRING` | Composto a partir de `oficina-infra-db` | String de conexão com o SQL Server |
-| `JWT_SECRET` | Idêntico ao `oficina-auth-lambda` | Chave de assinatura JWT (mínimo 32 caracteres) |
-| `JWT_ISSUER` | Idêntico ao `oficina-auth-lambda` | Issuer JWT |
-| `JWT_AUDIENCE` | Idêntico ao `oficina-auth-lambda` | Audience JWT |
-| `JWT_EXPIRATION_MINUTES` | Idêntico ao `oficina-auth-lambda` | Expiração dos tokens em minutos |
+| `AWS_ACCESS_KEY_ID` | Secret | Credencial AWS |
+| `AWS_SECRET_ACCESS_KEY` | Secret | Credencial AWS |
+| `AWS_REGION` | Secret | Região AWS |
+| `ECR_REPOSITORY_URL` | Secret | URL completa do repositório ECR (output do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) root core) |
+| `EKS_CLUSTER_NAME` | Secret | Nome do cluster EKS (output do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) root core) |
+| `DB_CONNECTION_STRING` | Secret | String de conexão com o SQL Server (composta a partir do [oficina-infra-db](https://github.com/fabianorodrigues/oficina-infra-db)) |
+| `JWT_SECRET` | Secret | Chave de assinatura JWT (mínimo 32 caracteres) — idêntico ao [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) |
+| `JWT_ISSUER` | Secret | Issuer JWT — idêntico ao [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) |
+| `JWT_AUDIENCE` | Secret | Audience JWT — idêntico ao [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) |
+| `JWT_EXPIRATION_MINUTES` | Secret | Expiração dos tokens em minutos — idêntico ao [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) |
 
-### Secrets opcionais
+### Opcional
 
-| Nome | Origem ou Default | Descrição |
-| --- | --- | --- |
-| `AWS_SESSION_TOKEN` | — | Credenciais temporárias (STS) |
-| `EMAIL_SMTP_USERNAME` | — | Usuário SMTP (obrigatório se SMTP habilitado) |
-| `EMAIL_SMTP_PASSWORD` | — | Senha SMTP (obrigatório se SMTP habilitado) |
-| `ADMIN_INICIAL_NOME` | — | Nome do admin inicial (apenas se input `enable_initial_admin=true`) |
-| `ADMIN_INICIAL_CPF` | — | CPF do admin inicial (apenas se input `enable_initial_admin=true`) |
-| `ADMIN_INICIAL_SENHA` | — | Senha do admin inicial (apenas se input `enable_initial_admin=true`) |
-| `NEW_RELIC_LICENSE_KEY` | — | License key para exportador OTLP |
-
-### Variables
-
-| Nome | Origem ou Default | Descrição |
-| --- | --- | --- |
-| `PROJECT_NAME` | `oficina` | Prefixo lógico |
-| `ENVIRONMENT` | `dev` | Ambiente |
-| `LOAD_BALANCER_PROVISIONING_MODE` | `terraform_nlb` | `terraform_nlb` ou `aws_lbc` |
-| `API_NODE_PORT` | `30080` | NodePort esperado (faixa 30000-32767) |
-| `EMAIL_SMTP_HOST` | — | Servidor SMTP (obrigatório se SMTP habilitado) |
-| `EMAIL_SMTP_PORT` | — | Porta SMTP (obrigatório se SMTP habilitado) |
-| `EMAIL_ENABLE_SSL` | — | `true` ou `false` (obrigatório se SMTP habilitado) |
-| `EMAIL_FROM` | — | Endereço de origem (obrigatório se SMTP habilitado) |
-| `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | SSM `public-base-url` ou vazio | URL base para links em e-mails |
-| `NEW_RELIC_REGION` | `US` | `US` ou `EU` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Escolhido pela região quando vazio | Override do endpoint OTLP |
+| Nome | Tipo | Default | Descrição |
+| --- | --- | --- | --- |
+| `AWS_SESSION_TOKEN` | Secret | — | Credenciais temporárias (STS) |
+| `EMAIL_SMTP_USERNAME` | Secret | — | Usuário SMTP (obrigatório se SMTP habilitado) |
+| `EMAIL_SMTP_PASSWORD` | Secret | — | Senha SMTP (obrigatório se SMTP habilitado) |
+| `ADMIN_INICIAL_NOME` | Secret | — | Nome do admin inicial (apenas se input `enable_initial_admin=true`) |
+| `ADMIN_INICIAL_CPF` | Secret | — | CPF do admin inicial (apenas se input `enable_initial_admin=true`) |
+| `ADMIN_INICIAL_SENHA` | Secret | — | Senha do admin inicial (apenas se input `enable_initial_admin=true`) |
+| `NEW_RELIC_LICENSE_KEY` | Secret | — | License key para exportador OTLP |
+| `PROJECT_NAME` | Variable | `oficina` | Prefixo lógico |
+| `ENVIRONMENT` | Variable | `dev` | Ambiente |
+| `LOAD_BALANCER_PROVISIONING_MODE` | Variable | `terraform_nlb` | `terraform_nlb` ou `aws_lbc` |
+| `API_NODE_PORT` | Variable | `30080` | NodePort esperado (faixa 30000-32767) |
+| `EMAIL_SMTP_HOST` | Variable | — | Servidor SMTP (obrigatório se SMTP habilitado) |
+| `EMAIL_SMTP_PORT` | Variable | — | Porta SMTP (obrigatório se SMTP habilitado) |
+| `EMAIL_ENABLE_SSL` | Variable | — | `true` ou `false` (obrigatório se SMTP habilitado) |
+| `EMAIL_FROM` | Variable | — | Endereço de origem (obrigatório se SMTP habilitado) |
+| `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | Variable | SSM `public-base-url` ou vazio | URL base para links em e-mails |
+| `NEW_RELIC_REGION` | Variable | `US` | `US` ou `EU` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | Escolhido pela região | Override do endpoint OTLP |
 
 ### Auto-provisionados pelo workflow
 
 - Namespace `oficina` no EKS.
 - ConfigMap `oficina-api-config` e Secret `oficina-api-secret`.
 - SSM `/<projeto>/<ambiente>/api/backend-listener-arn` (apenas no modo `aws_lbc`).
-- Imagem ECR taggeada com `commit-sha` e `latest` (reusa a imagem existente quando o SHA já foi publicado).
+- Imagem ECR taggeada com `commit-sha` e `latest`.
 
 ### Obtendo o ECR_REPOSITORY_URL
 
-Após o deploy do `oficina-infra-k8s` root core:
+Após o deploy do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) root core:
 
 ```powershell
 $env:AWS_REGION="<regiao>"
@@ -152,7 +126,7 @@ aws ecr describe-repositories --repository-names $env:ECR_REPOSITORY_NAME --regi
 
 Configure o valor retornado como o Secret `ECR_REPOSITORY_URL`.
 
-## Como executar
+## Execução
 
 Execute manualmente:
 
@@ -162,18 +136,11 @@ GitHub Actions > Deploy API > Run workflow
 
 O input `enable_initial_admin` deve ser `true` apenas na criação controlada do admin inicial em banco vazio. Nas execuções seguintes, mantenha `false`.
 
-No modo `terraform_nlb`, o workflow:
-
-- aplica `service-nodeport.yaml`;
-- valida que `API_NODE_PORT` bate com a porta do Target Group criado pelo Terraform;
-- valida o Service do tipo `NodePort`;
-- aguarda o rollout do Deployment;
-- valida `/health` via `kubectl port-forward`;
-- valida que `/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn` existe no SSM.
+No modo `terraform_nlb`, o workflow aplica `service-nodeport.yaml`, valida que `API_NODE_PORT` bate com a porta do Target Group, aguarda o rollout do Deployment e valida `/health` via `kubectl port-forward`.
 
 No modo `aws_lbc`, o workflow aplica `service.yaml`, valida o NLB interno criado pelo controller e grava o Listener ARN no SSM.
 
-## Como validar pela AWS
+## Validação
 
 ### Console
 
@@ -221,8 +188,6 @@ O Swagger não é exposto pelo API Gateway — apenas `/health` e `/api/*` são 
    http://localhost:18080/swagger
    ```
 
-O túnel encerra quando o terminal for fechado. Enquanto aberto, a porta `18080` local aponta diretamente para o pod no EKS, sem passar pelo API Gateway.
-
 ### Testes via Postman Runner
 
 Pré-requisito: passo 5 (API Gateway) concluído para usar a URL pública. Para ambiente local ou `port-forward`, qualquer etapa serve.
@@ -240,9 +205,9 @@ Variáveis obrigatórias — configure apenas estas três antes de executar:
 | `adminCpf` | CPF do admin inicial (`ADMIN_INICIAL_CPF`) |
 | `adminSenha` | Senha do admin inicial (`ADMIN_INICIAL_SENHA`) |
 
-As demais variáveis (tokens, IDs, CPFs de teste) são geradas e gerenciadas automaticamente pelos scripts da collection durante a execução.
+As demais variáveis são geradas e gerenciadas automaticamente pelos scripts da collection.
 
-Como obter o `baseUrl` conforme o ambiente:
+Como obter o `baseUrl`:
 
 ```powershell
 # AWS — URL pública do API Gateway (passo 5 concluído)
@@ -262,7 +227,7 @@ Como executar via Runner:
 3. Clique com o botão direito na collection > **Run collection**.
 4. Confirme que todas as requisições estão selecionadas e clique em **Run**.
 
-## Como executar localmente
+## Execução local
 
 Pré-requisitos: .NET 10 SDK, Docker e Docker Compose.
 
@@ -274,8 +239,6 @@ docker compose --profile local-db --env-file docker/.env -f docker/docker-compos
 ```
 
 Edite `docker/.env` com valores próprios — nunca versione credenciais reais.
-
-## Como validar localmente
 
 Build, testes e health check:
 
@@ -294,13 +257,13 @@ Swagger local:
 http://localhost:8080/swagger
 ```
 
-## Monitoramento e Observabilidade
+## Observabilidade
 
-A API emite logs JSON estruturados em stdout via Serilog, propaga `X-Correlation-Id` por requisição e exporta traces e métricas OpenTelemetry por OTLP quando configurada para New Relic. Os endpoints `/health` e `/ready` permanecem inalterados.
+A API emite logs JSON estruturados em stdout via Serilog, propaga `X-Correlation-Id` por requisição e exporta traces e métricas OpenTelemetry por OTLP quando configurada para New Relic.
 
 ### Configurar
 
-| Nome | Tipo | Obrigatório quando habilitado | Origem ou Default | Descrição |
+| Nome | Tipo | Obrigatório quando habilitado | Default | Descrição |
 | --- | --- | --- | --- | --- |
 | `NEW_RELIC_LICENSE_KEY` | Secret | Sim | — | License key usada pelo exportador OTLP da API |
 | `NEW_RELIC_REGION` | Variable | Não | `US` | `US` ou `EU` |
@@ -319,7 +282,7 @@ Os logs JSON estruturados pelo Serilog são sempre emitidos, independentemente d
 
 Não há workflow separado. As variáveis OTLP entram no pod pelo próprio `deploy-api` quando a license key estiver configurada. Sem ela, o pod sobe sem exportador OTLP e os logs continuam disponíveis via `kubectl logs`.
 
-Para habilitar dashboards, alertas e Synthetic Monitor, o root `terraform/observability` do `oficina-infra-k8s` deve ter sido aplicado.
+Para habilitar dashboards, alertas e Synthetic Monitor, o root `terraform/observability` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) deve ter sido aplicado.
 
 ### Validar
 
@@ -328,8 +291,6 @@ Console New Relic:
 - **APM e traces**: gere tráfego em `/health` e em rotas `/api/*`, filtre por `service.name = 'oficina-api'`.
 - **Logs**: pesquise por `correlationId` e pelos eventos de domínio (`OrdemServicoCriada`, `OrdemServicoStatusAlterado`, `OrdemServicoFalha`, `EmailOrcamentoFalha`).
 - **Correlation ID**: envie uma requisição com header `X-Correlation-Id` e confirme o mesmo valor na resposta e nos logs.
-- **Tempo por status**: o campo `statusDurationMs` aparece somente quando a duração é calculável a partir da transição observada.
-- **EF Core**: a instrumentação de banco usa pacote beta do OpenTelemetry; em caso de instabilidade de restore/build, mantenha apenas HTTP, HttpClient, OTLP básico e logs estruturados.
 
 CLI (PowerShell) — logs do pod sem precisar do New Relic:
 
@@ -344,4 +305,4 @@ kubectl logs deployment/oficina-api -n oficina | Select-String "correlationId"
 
 ## Próxima etapa
 
-Publicar `oficina-auth-lambda`. Em seguida, aplicar o root `terraform/api-gateway` do `oficina-infra-k8s`. O passo 6 (redeploy desta API) só é necessário se a aplicação precisar refletir a `public-base-url` recém-criada em e-mails.
+Publicar [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda). Em seguida, aplicar o root `terraform/api-gateway` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s). O passo 6 (redeploy desta API) só é necessário se a aplicação precisar refletir a `public-base-url` recém-criada em e-mails.
