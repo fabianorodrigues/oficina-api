@@ -174,9 +174,10 @@ http://localhost:18080/swagger
 
 **Pré-requisito:** passo 5 (API Gateway) concluído para usar a URL pública. Para ambiente local ou port-forward, qualquer etapa serve.
 
-**Arquivos:**
-- Collection: `postman/OficinaAPI-cenarios.postman_collection.json`
-- Environment: `postman/OficinaAPI-cenarios.postman_environment.json`
+**Arquivos:** [abrir pasta do Postman](postman/)
+
+- Collection: [postman/OficinaAPI-cenarios.postman_collection.json](postman/OficinaAPI-cenarios.postman_collection.json)
+- Environment: [postman/OficinaAPI-cenarios.postman_environment.json](postman/OficinaAPI-cenarios.postman_environment.json)
 
 **Variáveis obrigatórias — configure apenas estas três antes de rodar:**
 
