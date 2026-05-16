@@ -6,14 +6,18 @@ using Microsoft.OpenApi;
 using Oficina.Api.Endpoints;
 using Oficina.Api.Filters;
 using Oficina.Api.Middlewares;
+using Oficina.Api.Observability;
 using Oficina.Api.Security;
 using Oficina.Application;
 using Oficina.Application.Abstractions.Seguranca;
 using Oficina.Infrastructure;
 using Oficina.Infrastructure.Persistencia;
+using Serilog;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.ConfigureStructuredLogging();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -77,6 +81,7 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddApplication();
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddOficinaObservability();
 
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IPasswordHashService, PasswordHashService>();
@@ -152,6 +157,8 @@ app.UseSwaggerUI(options =>
     options.RoutePrefix = "swagger";
 });
 
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseHttpsRedirection();

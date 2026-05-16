@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Oficina.Application.Abstractions.Email;
 using Oficina.Application.Abstractions.Notificacoes;
 using Oficina.Application.Abstractions.Repositorios;
+using Oficina.Application.Observability;
 using Oficina.Infrastructure.Email.Configurations;
 using Oficina.Infrastructure.Email.Templates;
 
@@ -54,7 +55,12 @@ public class NotificadorCliente : INotificadorCliente
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Falha ao enviar e-mail do orcamento {OrcamentoId} e OS {OrdemServicoId}. A acao principal foi preservada.", orcamentoId, ordemServicoId);
+            _logger.LogError(
+                "Falha ao enviar e-mail do orcamento {eventType} {orcamentoId} {ordemServicoId} {errorType}. A acao principal foi preservada.",
+                OficinaEventTypes.EmailOrcamentoFalha,
+                orcamentoId,
+                ordemServicoId,
+                ex.GetType().Name);
             return;
         }
 

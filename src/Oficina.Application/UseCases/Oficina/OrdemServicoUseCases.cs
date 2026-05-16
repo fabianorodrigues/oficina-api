@@ -1,6 +1,9 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Oficina.Application.Abstractions.Repositorios;
-using Oficina.Application.Shared;
 using Oficina.Application.DTO.Oficina;
+using Oficina.Application.Observability;
+using Oficina.Application.Shared;
 using Oficina.Domain.Oficina;
 using Oficina.Domain.Oficina.Enums;
 
@@ -13,7 +16,7 @@ public class ObterOrdemServicoUseCase
 
     public async Task<(OrdemServico os, Orcamento? orcamento)> Executar(Guid id, CancellationToken ct)
     {
-        var os = await _repo.ObterOrdemServico(id, ct) ?? throw new OficinaException("Ordem de serviço não encontrada.", 404);
+        var os = await _repo.ObterOrdemServico(id, ct) ?? throw new OficinaException("Ordem de serviÃ§o nÃ£o encontrada.", 404);
         var orc = os.OrcamentoId is null ? null : await _repo.ObterOrcamento(os.OrcamentoId.Value, ct);
         return (os, orc);
     }
@@ -61,29 +64,75 @@ public class ListarOrdensServicoUseCase
 public class FinalizarOrdemServicoUseCase
 {
     private readonly IOficinaRepository _repo;
-    public FinalizarOrdemServicoUseCase(IOficinaRepository repo) => _repo = repo;
+    private readonly ILogger<FinalizarOrdemServicoUseCase> _logger;
+
+    public FinalizarOrdemServicoUseCase(IOficinaRepository repo, ILogger<FinalizarOrdemServicoUseCase>? logger = null)
+    {
+        _repo = repo;
+        _logger = logger ?? NullLogger<FinalizarOrdemServicoUseCase>.Instance;
+    }
 
     public async Task Executar(Guid ordemServicoId, CancellationToken ct)
     {
-        var os = await _repo.ObterOrdemServico(ordemServicoId, ct)
-                 ?? throw new OficinaException("Ordem de serviço não encontrada.", 404);
+        try
+        {
+            var os = await _repo.ObterOrdemServico(ordemServicoId, ct)
+                     ?? throw new OficinaException("Ordem de serviÃ§o nÃ£o encontrada.", 404);
 
-        os.Finalizar();
-        await _repo.Salvar(ct);
+            var statusAnterior = os.Status;
+            var dataStatusAnterior = os.DataUltimaAtualizacaoStatus;
+
+            os.Finalizar();
+            await _repo.Salvar(ct);
+
+            _logger.OrdemServicoStatusAlterado(os, statusAnterior, dataStatusAnterior);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.OrdemServicoFalha(ex, ordemServicoId);
+            throw;
+        }
     }
 }
 
 public class EntregarOrdemServicoUseCase
 {
     private readonly IOficinaRepository _repo;
-    public EntregarOrdemServicoUseCase(IOficinaRepository repo) => _repo = repo;
+    private readonly ILogger<EntregarOrdemServicoUseCase> _logger;
+
+    public EntregarOrdemServicoUseCase(IOficinaRepository repo, ILogger<EntregarOrdemServicoUseCase>? logger = null)
+    {
+        _repo = repo;
+        _logger = logger ?? NullLogger<EntregarOrdemServicoUseCase>.Instance;
+    }
 
     public async Task Executar(Guid ordemServicoId, CancellationToken ct)
     {
-        var os = await _repo.ObterOrdemServico(ordemServicoId, ct)
-                 ?? throw new OficinaException("Ordem de serviço não encontrada.", 404);
+        try
+        {
+            var os = await _repo.ObterOrdemServico(ordemServicoId, ct)
+                     ?? throw new OficinaException("Ordem de serviÃ§o nÃ£o encontrada.", 404);
 
-        os.MarcarEntregue();
-        await _repo.Salvar(ct);
+            var statusAnterior = os.Status;
+            var dataStatusAnterior = os.DataUltimaAtualizacaoStatus;
+
+            os.MarcarEntregue();
+            await _repo.Salvar(ct);
+
+            _logger.OrdemServicoStatusAlterado(os, statusAnterior, dataStatusAnterior);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.OrdemServicoFalha(ex, ordemServicoId);
+            throw;
+        }
     }
 }

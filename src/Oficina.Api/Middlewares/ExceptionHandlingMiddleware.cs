@@ -37,7 +37,10 @@ public class ExceptionHandlingMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Erro inesperado");
+            _logger.LogError(
+                "Erro inesperado {eventType} {errorType}",
+                "ErroNaoTratado",
+                ex.GetType().Name);
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             await context.Response.WriteAsJsonAsync(new { erro = "Erro inesperado." });
         }
