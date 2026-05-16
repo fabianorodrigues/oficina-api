@@ -44,6 +44,7 @@ graph LR
 | 4 | [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) | sempre |
 | 5 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — api-gateway | sempre |
 | 6 | [oficina-api](https://github.com/fabianorodrigues/oficina-api) — redeploy | se o pod precisar refletir `public-base-url` em e-mails |
+| 7 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — observability | opcional — somente após passo 5 |
 
 Cada README detalha apenas a responsabilidade do seu repositório. Para o passo a passo dos demais, consulte os READMEs correspondentes.
 
@@ -57,7 +58,7 @@ graph LR
   MIG --> RDS[(RDS SQL Server)]
   MIG --> DEP[Deployment K8s]
   DEP --> SVC[Service + NLB]
-  DEP --> HC[health check]
+  DEP --> HC[/health check/]
 ```
 
 ## Configuração
@@ -260,10 +261,10 @@ A API usa OpenTelemetry/OTLP como contrato de observabilidade independente de fo
 
 ### Configurar
 
-| Nome | Tipo | Obrigatório quando habilitado | Default | Descrição |
-| --- | --- | --- | --- | --- |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | Não | — | Endpoint OTLP do backend escolhido; vazio ou inválido mantém a API sem exportação externa |
-| `OTEL_EXPORTER_OTLP_HEADERS` | Secret | Quando o backend exigir | — | Headers do exportador OTLP, por exemplo autenticação |
+| Nome | Tipo | Default | Descrição |
+| --- | --- | --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | — | Endpoint OTLP do backend escolhido; vazio ou inválido mantém a API sem exportação externa |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Secret | — | Headers do exportador OTLP, por exemplo autenticação |
 
 Os logs JSON estruturados pelo Serilog são sempre emitidos, independentemente da configuração OTLP. Se `OTEL_EXPORTER_OTLP_ENDPOINT` estiver inválido, o workflow registra aviso e desliga a exportação OTLP para não interferir no deploy.
 
@@ -280,7 +281,7 @@ Para outro backend, troque apenas `OTEL_EXPORTER_OTLP_ENDPOINT` e `OTEL_EXPORTER
 
 Não há workflow separado. As variáveis OTLP entram no pod pelo próprio `deploy-api`. Sem `OTEL_EXPORTER_OTLP_ENDPOINT`, ou com configuração OTLP inválida, o pod sobe sem exportador externo e os logs continuam disponíveis via `kubectl logs`.
 
-Para habilitar dashboards, alertas e Synthetic Monitor, o root `terraform/observability` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) deve ter sido aplicado.
+Para habilitar dashboards, alertas e Synthetic Monitor no New Relic, aplique o root `terraform/observability` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) somente após o passo 5 (API Gateway) estar concluído e a URL pública da API responder em `/health`.
 
 ### Validar
 
@@ -303,4 +304,4 @@ kubectl logs deployment/oficina-api -n oficina | Select-String "correlationId"
 
 ## Próxima etapa
 
-Publicar [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda). Em seguida, aplicar o root `terraform/api-gateway` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s). O passo 6 (redeploy desta API) só é necessário se a aplicação precisar refletir a `public-base-url` recém-criada em e-mails.
+Publicar [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda). Em seguida, aplicar o root `terraform/api-gateway` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s). O passo 6 (redeploy desta API) só é necessário se a aplicação precisar refletir a `public-base-url` recém-criada em e-mails; o passo 7 (`terraform/observability`) só deve ser aplicado depois do API Gateway validado.
