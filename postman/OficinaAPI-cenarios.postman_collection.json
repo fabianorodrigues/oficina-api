@@ -2622,7 +2622,7 @@
         },
         {
             "key": "clienteCpf",
-            "value": "39053344705"
+            "value": ""
         },
         {
             "key": "outroClienteId",
@@ -2702,11 +2702,11 @@
         },
         {
             "key": "clienteEmail",
-            "value": "joao.20260502120000@email.com"
+            "value": ""
         },
         {
             "key": "outroClienteEmail",
-            "value": "maria.20260502120000@email.com"
+            "value": ""
         }
     ]
 }
