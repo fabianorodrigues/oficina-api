@@ -53,6 +53,10 @@ jobs:
       EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO: ${{ vars.EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO }}
       EMAIL_SMTP_USERNAME: ${{ secrets.EMAIL_SMTP_USERNAME }}
       EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${{ vars.OTEL_EXPORTER_OTLP_PROTOCOL || 'http/protobuf' }}
+      OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+      OTEL_RESOURCE_ATTRIBUTES: ${{ vars.OTEL_RESOURCE_ATTRIBUTES }}
       ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
 
     steps:
@@ -139,6 +143,15 @@ jobs:
           if [ "${JWT_EXPIRATION_MINUTES}" -le 0 ]; then
             echo "JWT_EXPIRATION_MINUTES must be a positive integer."
             exit 1
+          fi
+
+          otel_protocol="${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}"
+          if [ "${otel_protocol}" != "http/protobuf" ] && [ "${otel_protocol}" != "grpc" ]; then
+            echo "::warning::OTEL_EXPORTER_OTLP_PROTOCOL is invalid. The deployment will continue and the API will run without external OTLP export if needed."
+          fi
+
+          if [ -n "${OTEL_EXPORTER_OTLP_ENDPOINT:-}" ] && [[ ! "${OTEL_EXPORTER_OTLP_ENDPOINT}" =~ ^https?:// ]]; then
+            echo "::warning::OTEL_EXPORTER_OTLP_ENDPOINT is invalid. The deployment will continue without external OTLP export."
           fi
 
           email_enable_ssl_normalized="$(printf '%s' "${EMAIL_ENABLE_SSL:-false}" | tr '[:upper:]' '[:lower:]')"
@@ -380,9 +393,10 @@ jobs:
       EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO: ${{ vars.EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO }}
       EMAIL_SMTP_USERNAME: ${{ secrets.EMAIL_SMTP_USERNAME }}
       EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
-      NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
-      NEW_RELIC_REGION: ${{ vars.NEW_RELIC_REGION || 'US' }}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${{ vars.OTEL_EXPORTER_OTLP_PROTOCOL || 'http/protobuf' }}
+      OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+      OTEL_RESOURCE_ATTRIBUTES: ${{ vars.OTEL_RESOURCE_ATTRIBUTES }}
       ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
 
     steps:
@@ -460,24 +474,19 @@ jobs:
             email_smtp_port="0"
           fi
 
-          new_relic_region="$(printf '%s' "${NEW_RELIC_REGION:-US}" | tr '[:lower:]' '[:upper:]')"
-          otel_endpoint=""
-          if [ -n "${NEW_RELIC_LICENSE_KEY:-}" ]; then
-            otel_endpoint="${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
-            if [ -z "${otel_endpoint}" ]; then
-              case "${new_relic_region}" in
-                EU)
-                  otel_endpoint="https://otlp.eu01.nr-data.net"
-                  ;;
-                US)
-                  otel_endpoint="https://otlp.nr-data.net"
-                  ;;
-                *)
-                  echo "NEW_RELIC_REGION must be US or EU when NEW_RELIC_LICENSE_KEY is configured."
-                  exit 1
-                  ;;
-              esac
-            fi
+          otel_endpoint="${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+          otel_protocol="${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}"
+          otel_resource_attributes="${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=${ENVIRONMENT},service.namespace=oficina}"
+
+          if [ "${otel_protocol}" != "http/protobuf" ] && [ "${otel_protocol}" != "grpc" ]; then
+            echo "::warning::OTEL_EXPORTER_OTLP_PROTOCOL is invalid. Disabling external OTLP export for this deployment."
+            otel_protocol="http/protobuf"
+            otel_endpoint=""
+          fi
+
+          if [ -n "${otel_endpoint}" ] && [[ ! "${otel_endpoint}" =~ ^https?:// ]]; then
+            echo "::warning::OTEL_EXPORTER_OTLP_ENDPOINT is invalid. Disabling external OTLP export for this deployment."
+            otel_endpoint=""
           fi
 
           email_base_url="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}"
@@ -498,7 +507,8 @@ jobs:
             --from-literal=ASPNETCORE_URLS=http://+:8080 \
             --from-literal=OTEL_SERVICE_NAME=oficina-api \
             --from-literal=OTEL_EXPORTER_OTLP_ENDPOINT="${otel_endpoint}" \
-            --from-literal=OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+            --from-literal=OTEL_EXPORTER_OTLP_PROTOCOL="${otel_protocol}" \
+            --from-literal=OTEL_RESOURCE_ATTRIBUTES="${otel_resource_attributes}" \
             --from-literal=AdminInicial__Enabled="${ENABLE_INITIAL_ADMIN}" \
             --from-literal=EmailSettings__SmtpHost="${EMAIL_SMTP_HOST:-}" \
             --from-literal=EmailSettings__SmtpPort="${email_smtp_port}" \
@@ -530,9 +540,9 @@ jobs:
             )
           fi
 
-          if [ -n "${NEW_RELIC_LICENSE_KEY:-}" ]; then
+          if [ -n "${OTEL_EXPORTER_OTLP_HEADERS:-}" ]; then
             secret_args+=(
-              --from-literal=OTEL_EXPORTER_OTLP_HEADERS="api-key=${NEW_RELIC_LICENSE_KEY}"
+              --from-literal=OTEL_EXPORTER_OTLP_HEADERS="${OTEL_EXPORTER_OTLP_HEADERS}"
             )
           fi
 

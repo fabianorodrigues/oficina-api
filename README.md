@@ -93,7 +93,6 @@ Configure em `GitHub > Settings > Secrets and variables > Actions`.
 | `ADMIN_INICIAL_NOME` | Secret | — | Nome do admin inicial (apenas se input `enable_initial_admin=true`) |
 | `ADMIN_INICIAL_CPF` | Secret | — | CPF do admin inicial (apenas se input `enable_initial_admin=true`) |
 | `ADMIN_INICIAL_SENHA` | Secret | — | Senha do admin inicial (apenas se input `enable_initial_admin=true`) |
-| `NEW_RELIC_LICENSE_KEY` | Secret | — | License key para exportador OTLP |
 | `PROJECT_NAME` | Variable | `oficina` | Prefixo lógico |
 | `ENVIRONMENT` | Variable | `dev` | Ambiente |
 | `LOAD_BALANCER_PROVISIONING_MODE` | Variable | `terraform_nlb` | `terraform_nlb` ou `aws_lbc` |
@@ -103,8 +102,10 @@ Configure em `GitHub > Settings > Secrets and variables > Actions`.
 | `EMAIL_ENABLE_SSL` | Variable | — | `true` ou `false` (obrigatório se SMTP habilitado) |
 | `EMAIL_FROM` | Variable | — | Endereço de origem (obrigatório se SMTP habilitado) |
 | `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | Variable | SSM `public-base-url` ou vazio | URL base para links em e-mails |
-| `NEW_RELIC_REGION` | Variable | `US` | `US` ou `EU` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | Escolhido pela região | Override do endpoint OTLP |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | — | Endpoint OTLP opcional; vazio ou inválido desabilita exportação externa sem bloquear deploy |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | Variable | `http/protobuf` | Protocolo OTLP (`http/protobuf` ou `grpc`); valor inválido desabilita exportação externa |
+| `OTEL_RESOURCE_ATTRIBUTES` | Variable | `deployment.environment=<ambiente>,service.namespace=oficina` | Atributos OpenTelemetry extras do recurso |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Secret | — | Headers do exportador OTLP, por exemplo `api-key=<chave>` |
 
 ### Auto-provisionados pelo workflow
 
@@ -259,40 +260,52 @@ http://localhost:8080/swagger
 
 ## Observabilidade
 
-A API emite logs JSON estruturados em stdout via Serilog, propaga `X-Correlation-Id` por requisição e exporta traces e métricas OpenTelemetry por OTLP quando configurada para New Relic.
+A API usa OpenTelemetry/OTLP como contrato de observabilidade independente de fornecedor. Ela emite logs JSON estruturados em stdout via Serilog, propaga `X-Correlation-Id` por requisição e exporta traces e métricas por OTLP quando `OTEL_EXPORTER_OTLP_ENDPOINT` está configurado corretamente.
 
 ### Configurar
 
 | Nome | Tipo | Obrigatório quando habilitado | Default | Descrição |
 | --- | --- | --- | --- | --- |
-| `NEW_RELIC_LICENSE_KEY` | Secret | Sim | — | License key usada pelo exportador OTLP da API |
-| `NEW_RELIC_REGION` | Variable | Não | `US` | `US` ou `EU` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | Não | Escolhido pela região | Override do endpoint OTLP |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | Não | — | Endpoint OTLP do backend escolhido; vazio ou inválido mantém a API sem exportação externa |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | Variable | Não | `http/protobuf` | Protocolo OTLP (`http/protobuf` ou `grpc`); inválido desabilita o exportador |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Secret | Quando o backend exigir | — | Headers do exportador OTLP, por exemplo autenticação |
+| `OTEL_RESOURCE_ATTRIBUTES` | Variable | Não | `deployment.environment=<ambiente>,service.namespace=oficina` | Atributos OpenTelemetry adicionados ao recurso |
 
-Variáveis aplicadas no pod (auto-configuradas pelo workflow quando a license key existir):
+Variáveis aplicadas no pod:
 
 - `OTEL_SERVICE_NAME=oficina-api`
 - `OTEL_EXPORTER_OTLP_ENDPOINT`
-- `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`
-- `OTEL_EXPORTER_OTLP_HEADERS=api-key=<license-key>` via Secret K8s
+- `OTEL_EXPORTER_OTLP_PROTOCOL`
+- `OTEL_RESOURCE_ATTRIBUTES`
+- `OTEL_EXPORTER_OTLP_HEADERS` via Secret K8s, somente quando configurado
 
-Os logs JSON estruturados pelo Serilog são sempre emitidos, independentemente da configuração New Relic.
+Os logs JSON estruturados pelo Serilog são sempre emitidos, independentemente da configuração OTLP. Se `OTEL_EXPORTER_OTLP_ENDPOINT` ou `OTEL_EXPORTER_OTLP_PROTOCOL` estiverem inválidos, o workflow registra aviso e desliga a exportação OTLP para não interferir no deploy.
+
+Exemplo New Relic US:
+
+```text
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_HEADERS=api-key=<license-key>
+```
+
+Para outro backend, troque apenas `OTEL_EXPORTER_OTLP_ENDPOINT` e `OTEL_EXPORTER_OTLP_HEADERS`.
 
 ### Executar
 
-Não há workflow separado. As variáveis OTLP entram no pod pelo próprio `deploy-api` quando a license key estiver configurada. Sem ela, o pod sobe sem exportador OTLP e os logs continuam disponíveis via `kubectl logs`.
+Não há workflow separado. As variáveis OTLP entram no pod pelo próprio `deploy-api`. Sem `OTEL_EXPORTER_OTLP_ENDPOINT`, ou com configuração OTLP inválida, o pod sobe sem exportador externo e os logs continuam disponíveis via `kubectl logs`.
 
 Para habilitar dashboards, alertas e Synthetic Monitor, o root `terraform/observability` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) deve ter sido aplicado.
 
 ### Validar
 
-Console New Relic:
+Backend OTLP configurado:
 
 - **APM e traces**: gere tráfego em `/health` e em rotas `/api/*`, filtre por `service.name = 'oficina-api'`.
-- **Logs**: pesquise por `correlationId` e pelos eventos de domínio (`OrdemServicoCriada`, `OrdemServicoStatusAlterado`, `OrdemServicoFalha`, `EmailOrcamentoFalha`).
+- **Logs**: pesquise por `correlationId` e pelos eventos de domínio (`OrdemServicoCriada`, `OrdemServicoStatusAlterado`, `OrdemServicoFalha`, `EmailOrcamentoFalha`) no backend que coleta stdout/Kubernetes logs.
 - **Correlation ID**: envie uma requisição com header `X-Correlation-Id` e confirme o mesmo valor na resposta e nos logs.
 
-CLI (PowerShell) — logs do pod sem precisar do New Relic:
+CLI (PowerShell) — logs do pod sem precisar de backend externo:
 
 ```powershell
 $env:AWS_REGION="<regiao>"
