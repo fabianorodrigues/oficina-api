@@ -1,52 +1,54 @@
 # oficina-api
 
-## Visão Geral
+## Visão geral
 
 Este repositório contém a API principal da solução Oficina. A aplicação é uma API REST em .NET para clientes, veículos, serviços, peças, estoque, ordens de serviço, diagnósticos, orçamentos, autenticação e autorização JWT.
 
-Na AWS, a imagem Docker é publicada no ECR, as migrações são executadas por um Kubernetes Job e a API é implantada no EKS atrás de um NLB interno. A entrada pública é criada depois pelo API Gateway do `oficina-infra-k8s`.
+Na AWS, o workflow publica a imagem no ECR, executa migrations em um Kubernetes Job, aplica o Deployment no EKS e valida a API. A entrada pública é o API Gateway criado pelo `oficina-infra-k8s`.
 
-## Responsabilidade Deste Repositório
+## Diagrama de arquitetura
 
-- Manter código, domínio, infraestrutura da aplicação e migrações.
-- Executar build e testes automatizados.
-- Publicar a imagem Docker no ECR com tag do commit.
-- Executar migrações com `APP_MODE=migration`.
-- Implantar a API no EKS.
-- Criar o Service Kubernetes que gera o NLB interno.
-- Validar o NLB interno e gravar o Listener ARN no SSM para o API Gateway.
+```text
+GitHub Actions (deploy-api.yml)
+          │
+          ├─ 1. Build e testes .NET
+          ├─ 2. Publicar imagem no ECR  ──►  ECR Repository
+          ├─ 3. Migration Job K8s       ──►  RDS SQL Server
+          ├─ 4. Apply Deployment        ──►  EKS Deployment
+          │      + Service NodePort           pods: oficina-api
+          │                                   nodePort: 30080
+          └─ 5. Validar                 ──►  port-forward → /health
+                                             SSM Listener ARN existe
+```
 
-## Integração com os Outros Repositórios
+No modo `aws_lbc`, o Service é `LoadBalancer` e o Listener ARN é descoberto e gravado no SSM pelo workflow da API. No modo padrão `terraform_nlb`, o Service é `NodePort` e o Listener ARN já foi gravado pelo Terraform.
 
-Valores consumidos:
+## Tecnologias utilizadas
 
-| Valor | Origem | Uso |
-| --- | --- | --- |
-| `ECR_REPOSITORY_URL` | `oficina-infra-k8s` | Compilação e envio da imagem |
-| `EKS_CLUSTER_NAME` | `oficina-infra-k8s` | Acesso ao cluster |
-| `DB_CONNECTION_STRING` | `oficina-infra-db` e GitHub Secret | Acesso ao SQL Server |
-| Configuração JWT | GitHub Secrets compartilhados com `oficina-auth-lambda` | Validação de tokens |
-| SMTP e URL pública de e-mail | GitHub Variables/Secrets opcionais | Envio de e-mails quando configurado |
+- .NET 10 e ASP.NET Core
+- Entity Framework Core
+- SQL Server
+- Docker
+- Kubernetes
+- AWS EKS, ECR e SSM Parameter Store
+- GitHub Actions
+- Swagger/OpenAPI
+- Postman
 
-Valores gerados:
+## Sequência de Deploy (modo padrão `terraform_nlb`)
 
-| Valor | Consumido por | Uso |
-| --- | --- | --- |
-| Imagem Docker com tag do commit | EKS | Implantação rastreável |
-| Tag `latest` | ECR | Alias operacional da imagem mais recente |
-| NLB interno | `oficina-infra-k8s` API Gateway | Backend privado da API |
-| `/oficina/{environment}/api/backend-listener-arn` | `oficina-infra-k8s` API Gateway | Integração privada do API Gateway |
+| Passo | Repositório | O que provisiona |
+|-------|-------------|-----------------|
+| 1 | oficina-infra-db | VPC, subnets, RDS SQL Server |
+| 2 | oficina-infra-k8s core | EKS, ECR, NLB interno |
+| **3** | **oficina-api ← este** | Migrations, Deployment, Service |
+| 4 | oficina-auth-lambda | Lambdas de autenticação |
+| 5 | oficina-infra-k8s API Gateway | Entrada pública (HTTP API) |
+| 6 | oficina-api (opcional) | Redeploy para URL pública em e-mails |
 
-## Ordem de Implantação
+No modo `aws_lbc`, inserir `oficina-infra-k8s addons` entre os passos 2 e 3.
 
-1. `oficina-infra-db`
-2. `oficina-infra-k8s` core
-3. `oficina-infra-k8s` addons
-4. `oficina-api`
-5. `oficina-auth-lambda`
-6. `oficina-infra-k8s` API Gateway
-
-## Configuração Necessária
+## Configuração necessária
 
 Configure no GitHub Actions:
 
@@ -56,23 +58,48 @@ Configure no GitHub Actions:
 | `AWS_SECRET_ACCESS_KEY` | Secret | Autenticação AWS |
 | `AWS_SESSION_TOKEN` | Secret opcional | Credenciais temporárias |
 | `AWS_REGION` | Secret | Região AWS |
-| `ECR_REPOSITORY_URL` | Secret | URL do repositório ECR |
-| `EKS_CLUSTER_NAME` | Secret | Nome do cluster EKS |
-| `DB_CONNECTION_STRING` | Secret | Conexão com SQL Server |
-| `JWT_SECRET` | Secret | Chave de assinatura e validação JWT |
+| `ECR_REPOSITORY_URL` | Secret | URL completa do repositório ECR (ver abaixo) |
+| `EKS_CLUSTER_NAME` | Secret | Nome do cluster EKS provisionado pelo `oficina-infra-k8s` |
+| `DB_CONNECTION_STRING` | Secret | String de conexão com o SQL Server |
+| `JWT_SECRET` | Secret | Chave de assinatura JWT (mínimo 32 caracteres) |
 | `JWT_ISSUER` | Secret | Issuer JWT |
 | `JWT_AUDIENCE` | Secret | Audience JWT |
-| `JWT_EXPIRATION_MINUTES` | Secret | Tempo de expiração dos tokens |
-| `ADMIN_INICIAL_NOME` | Secret opcional | Admin inicial quando habilitado |
-| `ADMIN_INICIAL_CPF` | Secret opcional | Admin inicial quando habilitado |
-| `ADMIN_INICIAL_SENHA` | Secret opcional | Admin inicial quando habilitado |
-| `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_ENABLE_SSL`, `EMAIL_FROM` | Variables opcionais | Configuração SMTP |
-| `EMAIL_SMTP_USERNAME`, `EMAIL_SMTP_PASSWORD` | Secrets opcionais | Autenticação SMTP |
-| `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | Variable opcional | URL pública para links de e-mail |
+| `JWT_EXPIRATION_MINUTES` | Secret | Tempo de expiração dos tokens em minutos |
+| `ADMIN_INICIAL_NOME` | Secret opcional | Nome do admin inicial |
+| `ADMIN_INICIAL_CPF` | Secret opcional | CPF do admin inicial |
+| `ADMIN_INICIAL_SENHA` | Secret opcional | Senha do admin inicial |
+| `EMAIL_SMTP_HOST` | Variable opcional | Servidor SMTP |
+| `EMAIL_SMTP_PORT` | Variable opcional | Porta SMTP |
+| `EMAIL_ENABLE_SSL` | Variable opcional | `true` ou `false` |
+| `EMAIL_FROM` | Variable opcional | Endereço de origem dos e-mails |
+| `EMAIL_SMTP_USERNAME` | Secret opcional | Usuário de autenticação SMTP |
+| `EMAIL_SMTP_PASSWORD` | Secret opcional | Senha de autenticação SMTP |
+| `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` | Variable opcional | URL base para links de aprovação/recusa em e-mails |
+| `PROJECT_NAME` | Variable opcional | Prefixo lógico; padrão `oficina` |
+| `ENVIRONMENT` | Variable opcional | Ambiente; padrão `dev` |
+| `LOAD_BALANCER_PROVISIONING_MODE` | Variable opcional | `terraform_nlb` padrão ou `aws_lbc` |
+| `API_NODE_PORT` | Variable opcional | NodePort esperado; padrão `30080` |
 
-`JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE` e `JWT_EXPIRATION_MINUTES` devem ser iguais aos usados no `oficina-auth-lambda`. Se a URL pública de e-mail não for configurada, o workflow tenta ler `/oficina/{environment}/api/public-base-url` no SSM; se o parâmetro ainda não existir, o deploy segue com valor vazio.
+**`JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE` e `JWT_EXPIRATION_MINUTES` devem ser idênticos aos usados no `oficina-auth-lambda`.**
 
-## Como Executar
+**SMTP**: as quatro variáveis (`EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_ENABLE_SSL`, `EMAIL_FROM`) devem ser configuradas em conjunto com os secrets de autenticação. Se qualquer uma estiver ausente, o workflow falha na validação.
+
+Se `EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO` não estiver configurado, o workflow tenta ler `/${PROJECT_NAME}/${ENVIRONMENT}/api/public-base-url` no SSM. Se o parâmetro ainda não existir, o deploy segue com valor vazio.
+
+### Obtendo o ECR_REPOSITORY_URL
+
+Após o deploy do `oficina-infra-k8s` core, obtenha a URL do repositório ECR:
+
+```powershell
+$env:AWS_REGION="<regiao>"
+$env:ECR_REPOSITORY_NAME="oficina-api"  # ou o valor configurado em ECR_REPOSITORY_NAME
+
+aws ecr describe-repositories --repository-names $env:ECR_REPOSITORY_NAME --region $env:AWS_REGION --query "repositories[0].repositoryUri" --output text
+```
+
+Configure o valor retornado como secret `ECR_REPOSITORY_URL` no GitHub Actions.
+
+## Como executar
 
 Execute manualmente:
 
@@ -80,52 +107,69 @@ Execute manualmente:
 GitHub Actions > Deploy API > Run workflow
 ```
 
-O input `enable_initial_admin` deve ficar `true` apenas na criação controlada do admin inicial em banco vazio. Nas execuções seguintes, use `false`.
+O input `enable_initial_admin` deve ser `true` apenas na criação controlada do admin inicial em banco vazio. Nas execuções seguintes, use `false`.
 
-O workflow valida a configuração, executa build e testes, publica a imagem, executa as migrações, aplica os manifests no EKS, valida o rollout, confirma que o Load Balancer é NLB interno e grava `/oficina/{environment}/api/backend-listener-arn` no SSM.
+No modo `terraform_nlb`, o workflow:
 
-## Como Validar na AWS
+- aplica `service-nodeport.yaml`;
+- valida que `API_NODE_PORT` bate com a porta do Target Group criado pelo Terraform;
+- valida Service `NodePort`;
+- valida rollout;
+- valida `/health` via `kubectl port-forward`;
+- valida que `/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn` existe.
+
+No modo `aws_lbc`, o workflow usa `service.yaml`, valida o NLB interno criado pelo controller e grava o Listener ARN no SSM.
+
+## Como validar pela AWS
 
 Console:
 
-- Em ECR, confirme a imagem com tag do commit e a tag `latest`.
-- Em EKS, confirme deployment, pods e service no namespace `oficina`.
-- Em EC2 Load Balancers, confirme que o Load Balancer da API é do tipo network e scheme internal.
-- Em SSM Parameter Store, confirme que `/oficina/{environment}/api/backend-listener-arn` existe.
+- Em ECR, confirme imagem com tag do commit e tag `latest`.
+- Em EKS, confirme Deployment, Pods e Service no namespace `oficina`.
+- No modo `terraform_nlb`, confirme Service `NodePort`.
+- No modo `aws_lbc`, confirme Load Balancer interno do tipo network.
+- Em SSM Parameter Store, confirme `/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn`.
 
 CLI:
 
 ```powershell
 $env:AWS_REGION="<regiao>"
 $env:ENVIRONMENT="<ambiente>"
+$env:PROJECT_NAME="oficina"
 $env:EKS_CLUSTER_NAME="<nome-do-cluster>"
 $env:ECR_REPOSITORY_NAME="<nome-do-repositorio-ecr>"
 
-aws ecr describe-images --repository-name $env:ECR_REPOSITORY_NAME --image-ids imageTag="<commit-sha>" --region $env:AWS_REGION --query "imageDetails[0].{Tags:imageTags,PushedAt:imagePushedAt}"
+aws ecr describe-images --repository-name $env:ECR_REPOSITORY_NAME --image-ids imageTag="<commit-sha>" --region $env:AWS_REGION --query "length(imageDetails)"
 aws eks update-kubeconfig --name $env:EKS_CLUSTER_NAME --region $env:AWS_REGION
 kubectl rollout status deployment/oficina-api -n oficina
-kubectl get pods -n oficina -l app=oficina-api
-kubectl get svc oficina-api -n oficina -o jsonpath='{.spec.type}{"\n"}'
-aws elbv2 describe-load-balancers --region $env:AWS_REGION --query "LoadBalancers[?Type=='network' && Scheme=='internal'].{Type:Type,Scheme:Scheme,State:State.Code}"
-aws ssm get-parameter --name "/oficina/$($env:ENVIRONMENT)/api/backend-listener-arn" --region $env:AWS_REGION --query "Parameter.Name"
+kubectl get svc oficina-api -n oficina -o jsonpath='{.spec.type}{" nodePort="}{.spec.ports[0].nodePort}{"\n"}'
+aws ssm get-parameter --name "/$($env:PROJECT_NAME)/$($env:ENVIRONMENT)/api/backend-listener-arn" --region $env:AWS_REGION --query "Parameter.Name"
 ```
 
-Health Check da API:
+Health check e Swagger via port-forward:
 
 ```powershell
 kubectl port-forward svc/oficina-api -n oficina 18080:80
 Invoke-RestMethod http://127.0.0.1:18080/health
-Invoke-RestMethod http://127.0.0.1:18080/ready
 ```
 
-Após o API Gateway, valide a URL pública em ambiente autenticado:
+Swagger (disponível via port-forward):
 
-- `GET /health`
-- `POST /api/auth/cpf`
-- Uma rota protegida sem token
-- Uma rota protegida com token válido
+```text
+http://localhost:18080/swagger
+```
 
-## Como Executar Localmente
+Postman (disponível apenas após o passo 5 — API Gateway):
+
+- Collection: `postman/OficinaAPI-cenarios.postman_collection.json`
+- Environment: `postman/OficinaAPI-cenarios.postman_environment.json`
+- Configure a variável `base_url` com a URL pública do API Gateway:
+
+```powershell
+aws ssm get-parameter --name "/$($env:PROJECT_NAME)/$($env:ENVIRONMENT)/api/public-base-url" --region $env:AWS_REGION --query "Parameter.Value" --output text
+```
+
+## Como executar localmente
 
 Crie o arquivo local de variáveis e suba os serviços:
 
@@ -136,7 +180,7 @@ docker compose --profile local-db --env-file docker/.env -f docker/docker-compos
 docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d api
 ```
 
-## Como Validar Localmente
+## Como validar localmente
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/health
@@ -152,6 +196,6 @@ Swagger local:
 http://localhost:8080/swagger
 ```
 
-## Próxima Etapa
+## Próxima etapa
 
-Publicar o `oficina-auth-lambda`. Depois, aplicar o root `api-gateway` no `oficina-infra-k8s`.
+Publicar `oficina-auth-lambda`. Depois, aplicar o root `terraform/api-gateway` no `oficina-infra-k8s` e executar o roteiro funcional pós-deploy.

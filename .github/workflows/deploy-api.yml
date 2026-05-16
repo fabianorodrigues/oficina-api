@@ -19,6 +19,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ENVIRONMENT: ${{ vars.ENVIRONMENT || 'dev' }}
   PROJECT_NAME: ${{ vars.PROJECT_NAME || 'oficina' }}
+  LOAD_BALANCER_PROVISIONING_MODE: ${{ vars.LOAD_BALANCER_PROVISIONING_MODE || 'terraform_nlb' }}
+  API_NODE_PORT: ${{ vars.API_NODE_PORT || '30080' }}
 
 concurrency:
   group: deploy-api-${{ github.ref_name }}
@@ -87,6 +89,16 @@ jobs:
 
           if [ "${ENABLE_INITIAL_ADMIN}" != "true" ] && [ "${ENABLE_INITIAL_ADMIN}" != "false" ]; then
             echo "enable_initial_admin must be true or false."
+            missing=1
+          fi
+
+          if [ "${LOAD_BALANCER_PROVISIONING_MODE}" != "terraform_nlb" ] && [ "${LOAD_BALANCER_PROVISIONING_MODE}" != "aws_lbc" ]; then
+            echo "LOAD_BALANCER_PROVISIONING_MODE must be terraform_nlb or aws_lbc."
+            missing=1
+          fi
+
+          if [[ ! "${API_NODE_PORT}" =~ ^[0-9]+$ ]] || [ "${API_NODE_PORT}" -lt 30000 ] || [ "${API_NODE_PORT}" -gt 32767 ]; then
+            echo "API_NODE_PORT must be an integer between 30000 and 32767."
             missing=1
           fi
 
@@ -448,7 +460,7 @@ jobs:
           email_base_url="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}"
           if [ -z "${email_base_url}" ]; then
             email_base_url="$(aws ssm get-parameter \
-              --name "/oficina/${ENVIRONMENT}/api/public-base-url" \
+              --name "/${PROJECT_NAME}/${ENVIRONMENT}/api/public-base-url" \
               --region "${AWS_REGION}" \
               --query 'Parameter.Value' \
               --output text 2>/dev/null || true)"
@@ -582,6 +594,7 @@ jobs:
           aws eks update-kubeconfig --name "${EKS_CLUSTER_NAME}" --region "${AWS_REGION}" >/dev/null 2>&1
 
       - name: Validate AWS Load Balancer Controller
+        if: env.LOAD_BALANCER_PROVISIONING_MODE == 'aws_lbc'
         shell: bash
         run: |
           set -euo pipefail
@@ -606,40 +619,80 @@ jobs:
             exit 1
           fi
 
-          image_uri="${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
-          vpc_id="$(aws eks describe-cluster \
-            --name "${EKS_CLUSTER_NAME}" \
-            --region "${AWS_REGION}" \
-            --query 'cluster.resourcesVpcConfig.vpcId' \
-            --output text 2>/dev/null || true)"
-
-          if [ -z "${vpc_id}" ] || [ "${vpc_id}" = "None" ]; then
-            echo "Falha ao validar AWS Load Balancer Controller."
-            exit 1
-          fi
-
-          vpc_cidr_block="$(aws ec2 describe-vpcs \
-            --vpc-ids "${vpc_id}" \
-            --region "${AWS_REGION}" \
-            --query 'Vpcs[0].CidrBlock' \
-            --output text 2>/dev/null || true)"
-
-          if [ -z "${vpc_cidr_block}" ] || [ "${vpc_cidr_block}" = "None" ]; then
-            echo "Falha ao validar AWS Load Balancer Controller."
-            exit 1
-          fi
-
           mkdir -p /tmp/oficina-k8s
+
+          image_uri="${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
           sed "s|__IMAGE__|${image_uri}|g" k8s/deployment.yaml > /tmp/oficina-k8s/deployment.yaml
-          sed "s|__VPC_CIDR_BLOCK__|${vpc_cidr_block}|g" k8s/service.yaml > /tmp/oficina-k8s/service.yaml
+
+          if [ "${LOAD_BALANCER_PROVISIONING_MODE}" = "terraform_nlb" ]; then
+            parameter_name="/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn"
+            listener_arn="$(aws ssm get-parameter \
+              --name "${parameter_name}" \
+              --region "${AWS_REGION}" \
+              --query 'Parameter.Value' \
+              --output text 2>/dev/null || true)"
+
+            if [ -z "${listener_arn}" ] || [ "${listener_arn}" = "None" ]; then
+              echo "Falha ao validar Listener ARN no SSM."
+              exit 1
+            fi
+
+            target_group_arn="$(aws elbv2 describe-listeners \
+              --listener-arns "${listener_arn}" \
+              --region "${AWS_REGION}" \
+              --query 'Listeners[0].DefaultActions[0].TargetGroupArn' \
+              --output text 2>/dev/null || true)"
+
+            if [ -z "${target_group_arn}" ] || [ "${target_group_arn}" = "None" ]; then
+              echo "Falha ao validar Target Group da API."
+              exit 1
+            fi
+
+            target_group_port="$(aws elbv2 describe-target-groups \
+              --target-group-arns "${target_group_arn}" \
+              --region "${AWS_REGION}" \
+              --query 'TargetGroups[0].Port' \
+              --output text 2>/dev/null || true)"
+
+            if [ "${target_group_port}" != "${API_NODE_PORT}" ]; then
+              echo "API_NODE_PORT must match the Terraform api_node_port value."
+              exit 1
+            fi
+
+            sed "s|__API_NODE_PORT__|${API_NODE_PORT}|g" k8s/service-nodeport.yaml > /tmp/oficina-k8s/service.yaml
+          else
+            vpc_id="$(aws eks describe-cluster \
+              --name "${EKS_CLUSTER_NAME}" \
+              --region "${AWS_REGION}" \
+              --query 'cluster.resourcesVpcConfig.vpcId' \
+              --output text 2>/dev/null || true)"
+
+            if [ -z "${vpc_id}" ] || [ "${vpc_id}" = "None" ]; then
+              echo "Falha ao preparar Service LoadBalancer da API."
+              exit 1
+            fi
+
+            vpc_cidr_block="$(aws ec2 describe-vpcs \
+              --vpc-ids "${vpc_id}" \
+              --region "${AWS_REGION}" \
+              --query 'Vpcs[0].CidrBlock' \
+              --output text 2>/dev/null || true)"
+
+            if [ -z "${vpc_cidr_block}" ] || [ "${vpc_cidr_block}" = "None" ]; then
+              echo "Falha ao preparar Service LoadBalancer da API."
+              exit 1
+            fi
+
+            sed "s|__VPC_CIDR_BLOCK__|${vpc_cidr_block}|g" k8s/service.yaml > /tmp/oficina-k8s/service.yaml
+          fi
 
           if grep -q "__IMAGE__" /tmp/oficina-k8s/deployment.yaml; then
             echo "Rendered deployment manifest still contains __IMAGE__ placeholder."
             exit 1
           fi
 
-          if grep -q "__VPC_CIDR_BLOCK__" /tmp/oficina-k8s/service.yaml; then
-            echo "Rendered service manifest still contains __VPC_CIDR_BLOCK__ placeholder."
+          if grep -Eq "__VPC_CIDR_BLOCK__|__API_NODE_PORT__" /tmp/oficina-k8s/service.yaml; then
+            echo "Rendered service manifest still contains placeholders."
             exit 1
           fi
 
@@ -649,8 +702,7 @@ jobs:
           set -euo pipefail
 
           diagnose_rollout() {
-            kubectl get deployment oficina-api -n oficina --no-headers || true
-            kubectl get pods -n oficina -l app=oficina-api --no-headers || true
+            kubectl get deployment oficina-api -n oficina -o jsonpath='{.status.readyReplicas}{" ready replicas\n"}' 2>/dev/null || true
           }
 
           kubectl apply -f /tmp/oficina-k8s/deployment.yaml
@@ -700,11 +752,51 @@ jobs:
         run: |
           set -euo pipefail
 
-          load_balancer_failure_message="Falha ao localizar LoadBalancer interno da API. Verifique se o AWS Load Balancer Controller possui permissões suficientes no modo configurado."
+          if [ "${LOAD_BALANCER_PROVISIONING_MODE}" = "terraform_nlb" ]; then
+            svc_type="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.spec.type}' 2>/dev/null || true)"
+            if [ "${svc_type}" != "NodePort" ]; then
+              echo "Falha ao validar Service NodePort da API."
+              exit 1
+            fi
+
+            node_port="$(kubectl get svc oficina-api -n oficina -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || true)"
+            if [ "${node_port}" != "${API_NODE_PORT}" ]; then
+              echo "Falha ao validar NodePort esperado da API."
+              exit 1
+            fi
+
+            kubectl port-forward svc/oficina-api -n oficina 18080:80 >/tmp/oficina-api-port-forward.log 2>&1 &
+            port_forward_pid="$!"
+            trap 'kill "${port_forward_pid}" >/dev/null 2>&1 || true' EXIT
+
+            for attempt in {1..60}; do
+              if curl -fsS "http://127.0.0.1:18080/health" >/dev/null; then
+                echo "Health check succeeded."
+                break
+              fi
+
+              sleep 10
+            done
+
+            if ! curl -fsS "http://127.0.0.1:18080/health" >/dev/null; then
+              echo "Health check did not succeed before timeout."
+              exit 1
+            fi
+
+            parameter_name="/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn"
+            if ! aws ssm get-parameter --name "${parameter_name}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+              echo "Falha ao validar Listener ARN no SSM."
+              exit 1
+            fi
+
+            echo "Service NodePort, health check e Listener ARN validados."
+            exit 0
+          fi
+
+          load_balancer_failure_message="Falha ao localizar LoadBalancer interno da API. Verifique o modo de provisionamento configurado."
 
           diagnose_service() {
-            kubectl get svc oficina-api -n oficina -o jsonpath='{.metadata.name}{" type="}{.spec.type}{"\n"}' || true
-            kubectl get pods -n oficina -l app=oficina-api --no-headers || true
+            kubectl get svc oficina-api -n oficina -o jsonpath='{.spec.type}{" service\n"}' 2>/dev/null || true
           }
 
           lb_hostname=""
@@ -769,7 +861,7 @@ jobs:
             exit 1
           fi
 
-          parameter_name="/oficina/${ENVIRONMENT}/api/backend-listener-arn"
+          parameter_name="/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn"
           if aws ssm get-parameter --name "${parameter_name}" --region "${AWS_REGION}" >/dev/null 2>&1; then
             aws ssm put-parameter \
               --name "${parameter_name}" \
