@@ -462,6 +462,10 @@ jobs:
           require_can_i patch services
           require_can_i update services
           require_can_i get services
+          require_can_i create horizontalpodautoscalers
+          require_can_i get horizontalpodautoscalers
+          require_can_i patch horizontalpodautoscalers
+          require_can_i update horizontalpodautoscalers
 
       - name: Apply ConfigMap
         shell: bash
@@ -716,6 +720,7 @@ jobs:
 
           image_uri="${ECR_REPOSITORY_URL}:${GITHUB_SHA}"
           sed "s|__IMAGE__|${image_uri}|g" k8s/deployment.yaml > /tmp/oficina-k8s/deployment.yaml
+          cp k8s/hpa.yaml /tmp/oficina-k8s/hpa.yaml
 
           if [ "${LOAD_BALANCER_PROVISIONING_MODE}" = "terraform_nlb" ]; then
             parameter_name="/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn"
@@ -802,6 +807,7 @@ jobs:
 
           kubectl apply -f /tmp/oficina-k8s/deployment.yaml
           kubectl apply -f /tmp/oficina-k8s/service.yaml
+          kubectl apply -f /tmp/oficina-k8s/hpa.yaml
           kubectl rollout restart deployment/oficina-api -n oficina
 
           if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=300s; then
@@ -809,6 +815,44 @@ jobs:
             diagnose_rollout
             exit 1
           fi
+
+      - name: Validate API HPA
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          hpa_failure=false
+
+          validate_hpa_field() {
+            local description="$1"
+            local jsonpath="$2"
+            local expected="$3"
+            local actual
+
+            actual="$(kubectl get hpa oficina-api -n oficina -o jsonpath="${jsonpath}" 2>/dev/null || true)"
+            if [ "${actual}" != "${expected}" ]; then
+              echo "Falha ao validar HPA da API: ${description}."
+              hpa_failure=true
+            fi
+          }
+
+          validate_hpa_field "target kind" "{.spec.scaleTargetRef.kind}" "Deployment"
+          validate_hpa_field "target name" "{.spec.scaleTargetRef.name}" "oficina-api"
+          validate_hpa_field "minReplicas" "{.spec.minReplicas}" "1"
+          validate_hpa_field "maxReplicas" "{.spec.maxReplicas}" "2"
+          validate_hpa_field "CPU target" "{.spec.metrics[0].resource.target.averageUtilization}" "70"
+
+          if [ "${hpa_failure}" = "true" ]; then
+            kubectl describe hpa oficina-api -n oficina || true
+            exit 1
+          fi
+
+          metrics_api_available="$(kubectl get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || true)"
+          if [ "${metrics_api_available}" != "True" ]; then
+            echo "::warning::Metrics Server indisponivel no momento. O HPA foi aplicado, mas depende do Metrics Server para obter metricas."
+          fi
+
+          echo "HPA da API validado."
 
   validate-deploy:
     name: Validate deploy

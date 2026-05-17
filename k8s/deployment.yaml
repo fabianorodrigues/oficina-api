@@ -6,7 +6,6 @@ metadata:
   labels:
     app: oficina-api
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: oficina-api
@@ -19,6 +18,12 @@ spec:
         - name: oficina-api
           image: __IMAGE__
           imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
           ports:
             - name: http
               containerPort: 8080
