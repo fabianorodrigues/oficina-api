@@ -8,6 +8,8 @@ public static class OrdemServicoLoggingExtensions
 {
     public static void OrdemServicoCriada(this ILogger logger, OrdemServico os)
     {
+        OficinaMetrics.RegistrarOrdemServicoCriada(os.Status.ToString());
+
         logger.LogInformation(
             "Ordem de servico criada {eventType} {ordemServicoId} {status}",
             OficinaEventTypes.OrdemServicoCriada,
@@ -27,6 +29,11 @@ public static class OrdemServicoLoggingExtensions
         var statusDurationMs = CalcularDuracaoStatus(dataStatusAnterior, os.DataUltimaAtualizacaoStatus);
         if (statusDurationMs.HasValue)
         {
+            OficinaMetrics.RegistrarOrdemServicoProcessingMs(
+                statusDurationMs.Value,
+                statusAnterior.ToString(),
+                os.Status.ToString());
+
             logger.LogInformation(
                 "Status da ordem de servico alterado {eventType} {ordemServicoId} {statusAnterior} {statusNovo} {status} {statusDurationMs}",
                 OficinaEventTypes.OrdemServicoStatusAlterado,
