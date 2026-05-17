@@ -489,6 +489,12 @@ jobs:
             otel_endpoint=""
           fi
 
+          if [ -n "${otel_endpoint}" ]; then
+            echo "OTEL_EXPORTER_OTLP_ENDPOINT configured: yes"
+          else
+            echo "OTEL_EXPORTER_OTLP_ENDPOINT configured: no"
+          fi
+
           email_base_url="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}"
           if [ -z "${email_base_url}" ]; then
             email_base_url="$(aws ssm get-parameter \
@@ -541,9 +547,12 @@ jobs:
           fi
 
           if [ -n "${OTEL_EXPORTER_OTLP_HEADERS:-}" ]; then
+            echo "OTEL_EXPORTER_OTLP_HEADERS configured: yes"
             secret_args+=(
               --from-literal=OTEL_EXPORTER_OTLP_HEADERS="${OTEL_EXPORTER_OTLP_HEADERS}"
             )
+          else
+            echo "OTEL_EXPORTER_OTLP_HEADERS configured: no"
           fi
 
           if [ "${ENABLE_INITIAL_ADMIN}" = "true" ]; then
@@ -749,7 +758,8 @@ jobs:
 
           kubectl apply -f /tmp/oficina-k8s/deployment.yaml
           kubectl apply -f /tmp/oficina-k8s/service.yaml
-          kubectl annotate deployment oficina-api -n oficina redeployTimestamp="$(date +%s)" --overwrite
+          kubectl patch deployment oficina-api -n oficina \
+            -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"redeployTimestamp\":\"$(date +%s)\"}}}}}"
 
           if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=300s; then
             echo "API deployment rollout failed or timed out."
