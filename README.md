@@ -7,6 +7,7 @@ API REST principal da solução Oficina, implementada em .NET 10. Gerencia clien
 - Constrói a imagem Docker da API e publica no ECR (taggeada com `commit-sha` e `latest`).
 - Aplica K8s Job de migrations no RDS antes do Deployment.
 - Aplica Deployment + Service (NodePort no modo `terraform_nlb`, LoadBalancer interno no modo `aws_lbc`).
+- Aplica HPA da aplicação com escala por CPU, usando Metrics Server instalado pelo [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s).
 - No modo `aws_lbc`, grava o Listener ARN do NLB no SSM após o Service subir.
 
 ## Tecnologias utilizadas
@@ -39,7 +40,7 @@ graph LR
 |---|---|---|
 | 1 | [oficina-infra-db](https://github.com/fabianorodrigues/oficina-infra-db) | sempre |
 | 2 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — core | sempre |
-| 2a | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — addons | apenas se `LOAD_BALANCER_PROVISIONING_MODE=aws_lbc` |
+| 2a | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — addons | sempre; AWS Load Balancer Controller apenas se `LOAD_BALANCER_PROVISIONING_MODE=aws_lbc` |
 | 3 | [oficina-api](https://github.com/fabianorodrigues/oficina-api) | sempre |
 | 4 | [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) | sempre |
 | 5 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — api-gateway | sempre |
@@ -143,7 +144,7 @@ No modo `aws_lbc`, o workflow aplica `service.yaml`, valida o NLB interno criado
 ### Console
 
 - Em ECR, confirme imagem com tag do commit e tag `latest`.
-- Em EKS, confirme Deployment, Pods e Service no namespace `oficina`.
+- Em EKS, confirme Deployment, Pods, Service e HPA no namespace `oficina`.
 - No modo `terraform_nlb`, confirme Service do tipo `NodePort`.
 - No modo `aws_lbc`, confirme Load Balancer interno do tipo network.
 - Em SSM Parameter Store, confirme `/${PROJECT_NAME}/${ENVIRONMENT}/api/backend-listener-arn`.
@@ -161,6 +162,8 @@ aws ecr describe-images --repository-name $env:ECR_REPOSITORY_NAME --image-ids i
 aws eks update-kubeconfig --name $env:EKS_CLUSTER_NAME --region $env:AWS_REGION
 kubectl rollout status deployment/oficina-api -n oficina
 kubectl get svc oficina-api -n oficina -o jsonpath='{.spec.type}{" nodePort="}{.spec.ports[0].nodePort}{"\n"}'
+kubectl get hpa oficina-api -n oficina
+kubectl top pods -n oficina
 aws ssm get-parameter --name "/$($env:PROJECT_NAME)/$($env:ENVIRONMENT)/api/backend-listener-arn" --region $env:AWS_REGION --query "Parameter.Name"
 ```
 
