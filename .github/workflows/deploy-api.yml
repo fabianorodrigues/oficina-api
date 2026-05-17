@@ -442,13 +442,17 @@ jobs:
           }
 
           require_can_i get pods
+          require_can_i get pods/log
           require_can_i list pods
+          require_can_i list events
           require_can_i create jobs
           require_can_i get jobs
           require_can_i delete jobs
           require_can_i create secrets
+          require_can_i get secrets
           require_can_i delete secrets
           require_can_i create configmaps
+          require_can_i get configmaps
           require_can_i patch configmaps
           require_can_i update configmaps
           require_can_i create deployments
@@ -489,12 +493,6 @@ jobs:
             otel_endpoint=""
           fi
 
-          if [ -n "${otel_endpoint}" ]; then
-            echo "OTEL_EXPORTER_OTLP_ENDPOINT configured: yes"
-          else
-            echo "OTEL_EXPORTER_OTLP_ENDPOINT configured: no"
-          fi
-
           email_base_url="${EMAIL_BASE_URL_APROVA_RECUSA_ORCAMENTO:-}"
           if [ -z "${email_base_url}" ]; then
             email_base_url="$(aws ssm get-parameter \
@@ -524,6 +522,20 @@ jobs:
             --dry-run=client \
             -o yaml | kubectl apply -f -
 
+          otel_protocol_configured="$(kubectl get configmap oficina-api-config -n oficina -o jsonpath='{.data.OTEL_EXPORTER_OTLP_PROTOCOL}' 2>/dev/null || true)"
+          if [ -z "${otel_protocol_configured}" ]; then
+            echo "OTEL protocol configuration is missing."
+            exit 1
+          fi
+
+          if [ -n "${otel_endpoint}" ]; then
+            otel_endpoint_configured="$(kubectl get configmap oficina-api-config -n oficina -o jsonpath='{.data.OTEL_EXPORTER_OTLP_ENDPOINT}' 2>/dev/null || true)"
+            if [ -z "${otel_endpoint_configured}" ]; then
+              echo "OTEL endpoint configuration was expected but is missing."
+              exit 1
+            fi
+          fi
+
       - name: Recreate API Secret
         shell: bash
         run: |
@@ -547,12 +559,9 @@ jobs:
           fi
 
           if [ -n "${OTEL_EXPORTER_OTLP_HEADERS:-}" ]; then
-            echo "OTEL_EXPORTER_OTLP_HEADERS configured: yes"
             secret_args+=(
               --from-literal=OTEL_EXPORTER_OTLP_HEADERS="${OTEL_EXPORTER_OTLP_HEADERS}"
             )
-          else
-            echo "OTEL_EXPORTER_OTLP_HEADERS configured: no"
           fi
 
           if [ "${ENABLE_INITIAL_ADMIN}" = "true" ]; then
@@ -566,6 +575,14 @@ jobs:
           kubectl create secret generic oficina-api-secret \
             -n oficina \
             "${secret_args[@]}"
+
+          if [ -n "${OTEL_EXPORTER_OTLP_HEADERS:-}" ]; then
+            otel_header_configured="$(kubectl get secret oficina-api-secret -n oficina -o jsonpath='{.data.OTEL_EXPORTER_OTLP_HEADERS}' 2>/dev/null || true)"
+            if [ -z "${otel_header_configured}" ]; then
+              echo "OTEL header configuration was expected but is missing."
+              exit 1
+            fi
+          fi
 
       - name: Render migration manifest
         shell: bash
@@ -593,19 +610,44 @@ jobs:
           set -euo pipefail
 
           diagnose_migration() {
-            kubectl get job oficina-api-migration -n oficina --no-headers || true
-            kubectl get pods -n oficina -l job-name=oficina-api-migration --no-headers || true
+            kubectl get pods -n oficina -l job-name=oficina-api-migration || true
+            kubectl logs -n oficina -l job-name=oficina-api-migration --tail=200 --all-containers=true || true
           }
 
           kubectl delete job oficina-api-migration -n oficina --ignore-not-found=true
           kubectl wait --for=delete job/oficina-api-migration -n oficina --timeout=120s || true
           kubectl apply -f /tmp/oficina-k8s/migration-job.yaml
 
-          if ! kubectl wait --for=condition=complete job/oficina-api-migration -n oficina --timeout=300s; then
-            echo "Migration job failed or timed out."
-            diagnose_migration
-            exit 1
-          fi
+          echo "Waiting for migration job..."
+
+          for _ in {1..60}; do
+            succeeded="$(kubectl get job oficina-api-migration -n oficina -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
+            failed="$(kubectl get job oficina-api-migration -n oficina -o jsonpath='{.status.failed}' 2>/dev/null || true)"
+            failed_condition="$(kubectl get job oficina-api-migration -n oficina -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}' 2>/dev/null || true)"
+
+            if [ "${succeeded}" = "1" ]; then
+              echo "Migration job completed."
+              exit 0
+            fi
+
+            if [ -n "${failed}" ] && [ "${failed}" != "0" ]; then
+              echo "Migration job failed."
+              diagnose_migration
+              exit 1
+            fi
+
+            if [ "${failed_condition}" = "True" ]; then
+              echo "Migration job failed."
+              diagnose_migration
+              exit 1
+            fi
+
+            sleep 5
+          done
+
+          echo "Migration job timed out."
+          diagnose_migration
+          exit 1
 
   deploy-api:
     name: Deploy API
@@ -753,13 +795,14 @@ jobs:
           set -euo pipefail
 
           diagnose_rollout() {
-            kubectl get deployment oficina-api -n oficina -o jsonpath='{.status.readyReplicas}{" ready replicas\n"}' 2>/dev/null || true
+            kubectl get pods -n oficina -l app=oficina-api || true
+            kubectl logs -n oficina -l app=oficina-api --tail=200 || true
+            kubectl get events -n oficina --sort-by=.lastTimestamp | tail -50 || true
           }
 
           kubectl apply -f /tmp/oficina-k8s/deployment.yaml
           kubectl apply -f /tmp/oficina-k8s/service.yaml
-          kubectl patch deployment oficina-api -n oficina \
-            -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"redeployTimestamp\":\"$(date +%s)\"}}}}}"
+          kubectl rollout restart deployment/oficina-api -n oficina
 
           if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=300s; then
             echo "API deployment rollout failed or timed out."
