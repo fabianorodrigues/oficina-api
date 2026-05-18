@@ -13,6 +13,7 @@ API REST principal da solução Oficina — gestão de clientes, veículos, peç
 - 🧩 [Solução integrada](#solução-integrada)
 - 🏗️ [Arquitetura](#arquitetura)
 - 🔄 [Consumido e gerado](#consumido-e-gerado)
+- 🧭 [Rotas expostas](#rotas-expostas)
 - ⚙️ [Configuração](#configuração)
 - ▶️ [Execução](#execução)
 - ✅ [Validação](#validação)
@@ -25,7 +26,7 @@ API REST principal da solução Oficina — gestão de clientes, veículos, peç
 
 ## <a id="visão-geral"></a> 🎯 Visão geral
 
-Aplicação .NET 10 que constrói a imagem Docker, publica no ECR, executa migrations no RDS e implanta no EKS.
+**Passo 3 (e passo 6 opcional)** da solução Oficina. Aplicação .NET 10 que constrói a imagem Docker, publica no ECR, executa migrations no RDS e implanta no EKS.
 
 - Imagem ECR taggeada com `commit-sha` e `latest` (idempotente).
 - Job Kubernetes aplica migrations no RDS antes do Deployment.
@@ -60,9 +61,6 @@ graph LR
 | 5 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — api-gateway | sempre |
 | **6** | **[oficina-api](https://github.com/fabianorodrigues/oficina-api) — redeploy** | **opcional — este repositório, se `public-base-url` precisa entrar nos e-mails** |
 | 7 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — observability | opcional, após o passo 5 |
-
-> [!NOTE]
-> No passo 2, o Metrics Server é sempre instalado (HPA da API depende dele); o AWS Load Balancer Controller só é instalado quando `LOAD_BALANCER_PROVISIONING_MODE=aws_lbc`.
 
 ---
 
@@ -116,6 +114,26 @@ graph LR
 | Imagem ECR (`<commit-sha>` + `latest`) | EKS (passo 3/6) |
 | Recursos K8s no namespace `oficina` (Deployment, Service, HPA, ConfigMap, Secret) | execução em runtime |
 | SSM `/<projeto>/<ambiente>/api/backend-listener-arn` (apenas em `aws_lbc`) | api-gateway (passo 5) |
+
+---
+
+## <a id="rotas-expostas"></a> 🧭 Rotas expostas
+
+Rotas REST agrupadas por perfil exigido. Todas as rotas `/api/*` (exceto `/api/auth/cpf` e `/api/orcamentos/acoes-externas/*`) são protegidas pelo JWT Authorizer do API Gateway (passo 5).
+
+| Rota base | Verbo principal | Perfil exigido |
+| --- | --- | --- |
+| `/health`, `/ready` | GET | público |
+| `/api/auth` | POST | público |
+| `/api/orcamentos/acoes-externas/...` | GET, POST | público (links assinados de e-mail) |
+| `/api/clientes`, `/api/veiculos`, `/api/servicos`, `/api/pecas`, `/api/insumos`, `/api/estoque` | GET, POST, PUT, DELETE | Funcionário ou Admin |
+| `/api/ordens-servico`, `/api/orcamentos` | GET, POST, PUT, DELETE | Funcionário ou Admin |
+| `/api/relatorios` | GET | Funcionário ou Admin |
+| `/api/minhas-ordens-servico`, `/api/meus-orcamentos` | GET, POST | Cliente |
+| `/api/admin/funcionarios` | GET, POST, PUT, DELETE | Admin |
+
+> [!NOTE]
+> A rota `POST /api/auth/cpf` no API Gateway é roteada **diretamente para a Lambda `oficina-auth-cpf`** (passo 4), não para esta API. O `AuthController` desta API atende ao mesmo contrato em execução local.
 
 ---
 
@@ -372,3 +390,6 @@ No backend OTLP configurado, gere tráfego em `/health` e `/api/*`, filtre por `
 ## <a id="próxima-etapa"></a> ➡️ Próxima etapa
 
 Publicar [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) — **passo 4**. Em seguida, aplicar o root `terraform/api-gateway` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — **passo 5**. O **passo 6** (redeploy desta API) só é necessário se o pod precisar refletir a `public-base-url` recém-criada nos e-mails.
+
+> [!TIP]
+> **Checkpoint antes de seguir:** Pod respondendo `200` em `/ready`, imagem no ECR com a tag do `commit SHA` e a tag `latest` apontando para o **mesmo digest**, e (em `aws_lbc`) SSM `/<projeto>/<ambiente>/api/backend-listener-arn` gravado.
