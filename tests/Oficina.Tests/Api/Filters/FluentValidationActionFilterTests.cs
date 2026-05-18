@@ -26,7 +26,7 @@ public class FluentValidationActionFilterTests
             [],
             new Dictionary<string, object?>
             {
-                ["req"] = new AtualizarClienteRequest("39053344705", "Joao", "joao.@email.com", "11999999999")
+                ["req"] = new AtualizarClienteRequest("12345678909", "Joao", "joao.@email.com", "11999999999")
             },
             new object());
         var actionExecutada = false;

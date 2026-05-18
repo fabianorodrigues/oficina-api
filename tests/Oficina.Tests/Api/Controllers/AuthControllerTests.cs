@@ -20,10 +20,10 @@ public class AuthControllerTests
     [Fact]
     public async Task LoginCpf_SemSenha_DeveAutenticarCliente()
     {
-        var cliente = new Cliente(new DocumentoCpfCnpj("39053344705"), "Cliente", new Contato("cliente@teste.com", "11999999999"));
+        var cliente = new Cliente(new DocumentoCpfCnpj("12345678909"), "Cliente", new Contato("cliente@teste.com", "11999999999"));
         var controller = CriarController(cliente: cliente);
 
-        var result = await controller.LoginCpf(new LoginCpfRequest("390.533.447-05", null), CancellationToken.None);
+        var result = await controller.LoginCpf(new LoginCpfRequest("123.456.789-09", null), CancellationToken.None);
 
         var response = ObterResponse(result);
         Assert.Equal("token-cliente", response.AccessToken);
@@ -36,10 +36,10 @@ public class AuthControllerTests
     [Fact]
     public async Task LoginCpf_ComSenha_DeveAutenticarFuncionario()
     {
-        var funcionario = new Funcionario("Funcionario", "39053344705", "hash", PerfilUsuarioInterno.Funcionario);
+        var funcionario = new Funcionario("Funcionario", "12345678909", "hash", PerfilUsuarioInterno.Funcionario);
         var controller = CriarController(funcionario: funcionario, senhaValida: true);
 
-        var result = await controller.LoginCpf(new LoginCpfRequest("39053344705", "Senha@123"), CancellationToken.None);
+        var result = await controller.LoginCpf(new LoginCpfRequest("12345678909", "SenhaTeste!123"), CancellationToken.None);
 
         var response = ObterResponse(result);
         Assert.Equal("token-funcionario", response.AccessToken);
@@ -52,10 +52,10 @@ public class AuthControllerTests
     [Fact]
     public async Task LoginCpf_ComSenha_DeveAutenticarAdmin()
     {
-        var admin = new Funcionario("Admin", "39053344705", "hash", PerfilUsuarioInterno.Admin);
+        var admin = new Funcionario("Admin", "12345678909", "hash", PerfilUsuarioInterno.Admin);
         var controller = CriarController(funcionario: admin, senhaValida: true);
 
-        var result = await controller.LoginCpf(new LoginCpfRequest("39053344705", "Senha@123"), CancellationToken.None);
+        var result = await controller.LoginCpf(new LoginCpfRequest("12345678909", "SenhaTeste!123"), CancellationToken.None);
 
         var response = ObterResponse(result);
         Assert.Equal("Admin", response.Perfil);
@@ -68,7 +68,7 @@ public class AuthControllerTests
         var controller = CriarController();
 
         var ex = await Assert.ThrowsAsync<OficinaException>(() =>
-            controller.LoginCpf(new LoginCpfRequest("39053344705", null), CancellationToken.None));
+            controller.LoginCpf(new LoginCpfRequest("12345678909", null), CancellationToken.None));
 
         Assert.Equal(401, ex.StatusHttp);
     }
@@ -76,11 +76,11 @@ public class AuthControllerTests
     [Fact]
     public async Task LoginCpf_SenhaInvalida_DeveFalharCom401()
     {
-        var funcionario = new Funcionario("Funcionario", "39053344705", "hash", PerfilUsuarioInterno.Funcionario);
+        var funcionario = new Funcionario("Funcionario", "12345678909", "hash", PerfilUsuarioInterno.Funcionario);
         var controller = CriarController(funcionario: funcionario, senhaValida: false);
 
         var ex = await Assert.ThrowsAsync<OficinaException>(() =>
-            controller.LoginCpf(new LoginCpfRequest("39053344705", "errada"), CancellationToken.None));
+            controller.LoginCpf(new LoginCpfRequest("12345678909", "errada"), CancellationToken.None));
 
         Assert.Equal(401, ex.StatusHttp);
     }
@@ -93,11 +93,11 @@ public class AuthControllerTests
         var jwt = new Mock<IJwtTokenService>();
 
         cadastroRepo
-            .Setup(x => x.ObterClientePorDocumento("39053344705", It.IsAny<CancellationToken>()))
+            .Setup(x => x.ObterClientePorDocumento("12345678909", It.IsAny<CancellationToken>()))
             .ReturnsAsync(cliente);
 
         funcionarioRepo
-            .Setup(x => x.ObterPorCpf("39053344705", It.IsAny<CancellationToken>()))
+            .Setup(x => x.ObterPorCpf("12345678909", It.IsAny<CancellationToken>()))
             .ReturnsAsync(funcionario);
 
         password

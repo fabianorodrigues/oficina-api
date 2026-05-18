@@ -23,7 +23,7 @@ public class ValidatorsTests
     public void AtualizarClienteValidator_deve_rejeitar_email_invalido()
     {
         var v = new AtualizarClienteRequestValidator();
-        var r = v.Validate(new AtualizarClienteRequest("39053344705", "Joao", "joao.@email.com", "11999999999"));
+        var r = v.Validate(new AtualizarClienteRequest("12345678909", "Joao", "joao.@email.com", "11999999999"));
 
         Assert.False(r.IsValid);
         Assert.Contains(r.Errors, e => e.PropertyName == nameof(AtualizarClienteRequest.Email));
@@ -38,7 +38,7 @@ public class ValidatorsTests
             Cliente = new ClienteAberturaRequest
             {
                 Nome = "Joao",
-                Documento = "39053344705",
+                Documento = "12345678909",
                 Email = "joao.@email.com",
                 Telefone = "11999999999"
             },

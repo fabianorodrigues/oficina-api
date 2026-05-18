@@ -57,6 +57,8 @@ jobs:
       OTEL_EXPORTER_OTLP_PROTOCOL: ${{ vars.OTEL_EXPORTER_OTLP_PROTOCOL || 'http/protobuf' }}
       OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
       OTEL_RESOURCE_ATTRIBUTES: ${{ vars.OTEL_RESOURCE_ATTRIBUTES }}
+      OTEL_TRACES_SAMPLER: ${{ vars.OTEL_TRACES_SAMPLER || 'parentbased_traceidratio' }}
+      OTEL_TRACES_SAMPLER_ARG: ${{ vars.OTEL_TRACES_SAMPLER_ARG || '0.1' }}
       ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
 
     steps:
@@ -397,6 +399,8 @@ jobs:
       OTEL_EXPORTER_OTLP_PROTOCOL: ${{ vars.OTEL_EXPORTER_OTLP_PROTOCOL || 'http/protobuf' }}
       OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
       OTEL_RESOURCE_ATTRIBUTES: ${{ vars.OTEL_RESOURCE_ATTRIBUTES }}
+      OTEL_TRACES_SAMPLER: ${{ vars.OTEL_TRACES_SAMPLER || 'parentbased_traceidratio' }}
+      OTEL_TRACES_SAMPLER_ARG: ${{ vars.OTEL_TRACES_SAMPLER_ARG || '0.1' }}
       ENABLE_INITIAL_ADMIN: ${{ inputs.enable_initial_admin }}
 
     steps:
@@ -485,6 +489,8 @@ jobs:
           otel_endpoint="${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
           otel_protocol="${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}"
           otel_resource_attributes="${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=${ENVIRONMENT},service.namespace=oficina}"
+          otel_traces_sampler="${OTEL_TRACES_SAMPLER:-parentbased_traceidratio}"
+          otel_traces_sampler_arg="${OTEL_TRACES_SAMPLER_ARG:-0.1}"
 
           if [ "${otel_protocol}" != "http/protobuf" ] && [ "${otel_protocol}" != "grpc" ]; then
             echo "::warning::OTEL_EXPORTER_OTLP_PROTOCOL is invalid. Disabling external OTLP export for this deployment."
@@ -517,6 +523,8 @@ jobs:
             --from-literal=OTEL_EXPORTER_OTLP_ENDPOINT="${otel_endpoint}" \
             --from-literal=OTEL_EXPORTER_OTLP_PROTOCOL="${otel_protocol}" \
             --from-literal=OTEL_RESOURCE_ATTRIBUTES="${otel_resource_attributes}" \
+            --from-literal=OTEL_TRACES_SAMPLER="${otel_traces_sampler}" \
+            --from-literal=OTEL_TRACES_SAMPLER_ARG="${otel_traces_sampler_arg}" \
             --from-literal=AdminInicial__Enabled="${ENABLE_INITIAL_ADMIN}" \
             --from-literal=EmailSettings__SmtpHost="${EMAIL_SMTP_HOST:-}" \
             --from-literal=EmailSettings__SmtpPort="${email_smtp_port}" \
@@ -810,6 +818,8 @@ jobs:
           kubectl apply -f /tmp/oficina-k8s/hpa.yaml
           kubectl rollout restart deployment/oficina-api -n oficina
 
+          # New Relic/OTLP must never be a success condition for application deploy.
+          # Keep deploy validation limited to Kubernetes rollout and local/cluster health checks.
           if ! kubectl rollout status deployment/oficina-api -n oficina --timeout=300s; then
             echo "API deployment rollout failed or timed out."
             diagnose_rollout

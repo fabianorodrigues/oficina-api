@@ -55,6 +55,8 @@ public class NotificadorCliente : INotificadorCliente
         }
         catch (Exception ex)
         {
+            OficinaMetrics.RegistrarEmailOrcamentoTentativa("failure", ex.GetType().Name);
+
             _logger.LogError(
                 "Falha ao enviar e-mail do orcamento {eventType} {orcamentoId} {ordemServicoId} {errorType}. A acao principal foi preservada.",
                 OficinaEventTypes.EmailOrcamentoFalha,
@@ -63,6 +65,8 @@ public class NotificadorCliente : INotificadorCliente
                 ex.GetType().Name);
             return;
         }
+
+        OficinaMetrics.RegistrarEmailOrcamentoTentativa("success");
 
         _logger.LogInformation("Solicitacao de notificacao por e-mail processada para orcamento {OrcamentoId} e OS {OrdemServicoId}.", orcamentoId, ordemServicoId);
     }

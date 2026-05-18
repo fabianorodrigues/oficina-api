@@ -232,14 +232,65 @@ Como executar via Runner:
 
 Pré-requisitos: .NET 10 SDK, Docker e Docker Compose.
 
+### Fluxo 1 — Docker Compose completo
+
+Sobe SQL Server, smtp4dev, aplica migrations e executa a API em container.
+
 ```powershell
 Copy-Item docker/.env.example docker/.env
-docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d sqlserver smtp4dev
+# Edite docker/.env e preencha SQLSERVER_PASSWORD e JWT_SECRET.
+# Para criar admin local, altere ADMIN_INICIAL_ENABLED=true e preencha nome, CPF e senha.
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d --build sqlserver smtp4dev
 docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml run --rm migration
-docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d api
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d --build api
 ```
 
-Edite `docker/.env` com valores próprios — nunca versione credenciais reais.
+URLs locais desse fluxo:
+
+| Serviço | URL |
+| --- | --- |
+| API | `http://localhost:8080` |
+| Swagger | `http://localhost:8080/swagger` |
+| smtp4dev UI | `http://localhost:5000` |
+| SQL Server host | `localhost,1433` |
+| SMTP host | `localhost:25` |
+
+### Fluxo 2 — `dotnet run` com dependências em containers
+
+Sobe apenas SQL Server e smtp4dev pelo Compose, aplica migrations com a própria API em modo migration e executa a API pelo SDK local. Como o ASP.NET Core não lê `docker/.env` automaticamente, exporte os mesmos valores no terminal ou configure user-secrets antes do `dotnet run`.
+
+```powershell
+Copy-Item docker/.env.example docker/.env
+# Edite docker/.env antes de continuar.
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml up -d sqlserver smtp4dev
+
+$env:ConnectionStrings__SqlServer="Server=localhost,1433;Database=OficinaDb;User Id=sa;Password=<SQLSERVER_PASSWORD_LOCAL>;Encrypt=False;TrustServerCertificate=True;"
+$env:Jwt__Secret="<JWT_SECRET_LOCAL_COM_32+_CARACTERES>"
+$env:Jwt__Key=$env:Jwt__Secret
+
+# Opcional: habilite apenas se quiser criar um admin local.
+$env:AdminInicial__Enabled="true"
+$env:AdminInicial__Nome="<NOME_ADMIN_LOCAL>"
+$env:AdminInicial__Cpf="<CPF_ADMIN_LOCAL>"
+$env:AdminInicial__Senha="<SENHA_ADMIN_LOCAL>"
+
+$env:APP_MODE="migration"
+dotnet run --project src/Oficina.Api/Oficina.Api.csproj
+Remove-Item Env:APP_MODE
+
+dotnet run --project src/Oficina.Api/Oficina.Api.csproj
+```
+
+URLs locais desse fluxo:
+
+| Serviço | URL |
+| --- | --- |
+| API HTTP | `http://localhost:49324` |
+| API HTTPS | `https://localhost:49323` |
+| Swagger | `http://localhost:49324/swagger` |
+| smtp4dev UI | `http://localhost:5000` |
+| SQL Server host | `localhost,1433` |
+| SMTP host | `localhost:2525` |
 
 Build, testes e health check:
 
@@ -252,10 +303,10 @@ Invoke-RestMethod http://localhost:8080/health
 Invoke-RestMethod http://localhost:8080/ready
 ```
 
-Swagger local:
+Validação rápida do arquivo Compose:
 
-```text
-http://localhost:8080/swagger
+```powershell
+docker compose --profile local-db --env-file docker/.env -f docker/docker-compose.yml config
 ```
 
 ## Observabilidade
@@ -267,7 +318,10 @@ A API usa OpenTelemetry/OTLP como contrato de observabilidade independente de fo
 | Nome | Tipo | Default | Descrição |
 | --- | --- | --- | --- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Variable | — | Endpoint OTLP do backend escolhido; vazio ou inválido mantém a API sem exportação externa |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | Variable | `http/protobuf` | Protocolo OTLP aceito pela API: `http/protobuf` ou `grpc` |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Secret | — | Headers do exportador OTLP, por exemplo autenticação |
+| `OTEL_TRACES_SAMPLER` | Variable | `parentbased_traceidratio` | Amostrador de traces |
+| `OTEL_TRACES_SAMPLER_ARG` | Variable | `0.1` | Fração de amostragem quando o sampler usa razão |
 
 Os logs JSON estruturados pelo Serilog são sempre emitidos, independentemente da configuração OTLP. Se `OTEL_EXPORTER_OTLP_ENDPOINT` estiver inválido, o workflow registra aviso e desliga a exportação OTLP para não interferir no deploy.
 
@@ -275,10 +329,10 @@ Exemplo New Relic US:
 
 ```text
 OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net
-OTEL_EXPORTER_OTLP_HEADERS=api-key=<license-key>
+OTEL_EXPORTER_OTLP_HEADERS=<HEADER_DE_AUTENTICACAO>
 ```
 
-Para outro backend, troque apenas `OTEL_EXPORTER_OTLP_ENDPOINT` e `OTEL_EXPORTER_OTLP_HEADERS`.
+Para outro backend, troque apenas `OTEL_EXPORTER_OTLP_ENDPOINT` e `OTEL_EXPORTER_OTLP_HEADERS`. O valor de `OTEL_EXPORTER_OTLP_HEADERS` deve ficar em Secret, nunca no repositório.
 
 ### Executar
 

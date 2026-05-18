@@ -102,8 +102,8 @@ public class AdminInicialBackgroundServiceTests
         {
             ["AdminInicial:Enabled"] = "true",
             ["AdminInicial:Nome"] = "Admin Inicial",
-            ["AdminInicial:Cpf"] = "39053344705",
-            ["AdminInicial:Senha"] = "Senha@123"
+            ["AdminInicial:Cpf"] = "12345678909",
+            ["AdminInicial:Senha"] = "SenhaTeste!123"
         };
 
     private sealed class BootstrapperFake : IAdminInicialBootstrapper

@@ -1,16 +1,20 @@
 using Microsoft.Extensions.Http;
+using Oficina.Application.Observability;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Formatting.Compact;
+using System.Reflection;
 
 namespace Oficina.Api.Observability;
 
 public static class ObservabilityExtensions
 {
     private const string DefaultServiceName = "oficina-api";
+    private const string DefaultTraceSampler = "parentbased_traceidratio";
+    private const double DefaultTraceSamplerArg = 0.1;
 
     public static void ConfigureStructuredLogging(this WebApplicationBuilder builder)
     {
@@ -30,6 +34,7 @@ public static class ObservabilityExtensions
     {
         var serviceName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") ?? DefaultServiceName;
         var otlpEnabled = TryCreateOtlpExporterSettings(out var otlpSettings);
+        var sampler = CreateTraceSampler();
 
         services.AddScoped<ICorrelationContext, CorrelationContext>();
         services.AddTransient<CorrelationIdDelegatingHandler>();
@@ -43,10 +48,14 @@ public static class ObservabilityExtensions
         });
 
         services.AddOpenTelemetry()
-            .ConfigureResource(resource => resource.AddService(serviceName))
+            .ConfigureResource(resource => resource
+                .AddService(serviceName: serviceName, serviceVersion: ResolveServiceVersion())
+                .AddAttributes(GetKubernetesResourceAttributes())
+                .AddEnvironmentVariableDetector())
             .WithTracing(tracing =>
             {
                 tracing
+                    .SetSampler(sampler)
                     .AddAspNetCoreInstrumentation()
                     .AddEntityFrameworkCoreInstrumentation()
                     .AddHttpClientInstrumentation();
@@ -58,7 +67,8 @@ public static class ObservabilityExtensions
             {
                 metrics
                     .AddAspNetCoreInstrumentation()
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation()
+                    .AddMeter(OficinaMetrics.MeterName);
 
                 if (otlpEnabled)
                     metrics.AddOtlpExporter(options => ConfigureOtlpExporter(options, otlpSettings!, "v1/metrics"));
@@ -79,13 +89,17 @@ public static class ObservabilityExtensions
             string.IsNullOrWhiteSpace(endpoint.Host) ||
             (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps))
         {
+            LogSafeWarning("OTEL_EXPORTER_OTLP_ENDPOINT is invalid. OTLP exporter disabled.");
             return false;
         }
 
         if (!TryGetOtlpProtocol(out var protocol))
+        {
+            LogSafeWarning("OTEL_EXPORTER_OTLP_PROTOCOL is invalid. OTLP exporter disabled.");
             return false;
+        }
 
-        settings = new OtlpExporterSettings(endpoint, protocol, GetValidOtlpHeaders());
+        settings = new OtlpExporterSettings(endpoint, protocol, GetOptionalOtlpHeaders());
         return true;
     }
 
@@ -112,7 +126,7 @@ public static class ObservabilityExtensions
         }
     }
 
-    private static string? GetValidOtlpHeaders()
+    private static string? GetOptionalOtlpHeaders()
     {
         var headers = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_HEADERS");
         if (string.IsNullOrWhiteSpace(headers))
@@ -129,6 +143,94 @@ public static class ObservabilityExtensions
         })
             ? headers
             : null;
+    }
+
+    private static Sampler CreateTraceSampler()
+    {
+        var samplerName = Environment.GetEnvironmentVariable("OTEL_TRACES_SAMPLER");
+        if (string.IsNullOrWhiteSpace(samplerName))
+            samplerName = DefaultTraceSampler;
+
+        samplerName = samplerName.Trim().ToLowerInvariant();
+        var samplerArg = GetTraceSamplerArg();
+
+        return samplerName switch
+        {
+            "always_on" => new AlwaysOnSampler(),
+            "always_off" => new AlwaysOffSampler(),
+            "traceidratio" => new TraceIdRatioBasedSampler(samplerArg),
+            "parentbased_traceidratio" => new ParentBasedSampler(new TraceIdRatioBasedSampler(samplerArg)),
+            _ => UseDefaultSampler()
+        };
+    }
+
+    private static Sampler UseDefaultSampler()
+    {
+        LogSafeWarning("OTEL_TRACES_SAMPLER is invalid. Using the default trace sampler.");
+        return new ParentBasedSampler(new TraceIdRatioBasedSampler(DefaultTraceSamplerArg));
+    }
+
+    private static double GetTraceSamplerArg()
+    {
+        var value = Environment.GetEnvironmentVariable("OTEL_TRACES_SAMPLER_ARG");
+        if (string.IsNullOrWhiteSpace(value))
+            return DefaultTraceSamplerArg;
+
+        if (double.TryParse(
+                value,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var samplerArg) &&
+            samplerArg >= 0 &&
+            samplerArg <= 1)
+        {
+            return samplerArg;
+        }
+
+        LogSafeWarning("OTEL_TRACES_SAMPLER_ARG is invalid. Using the default trace sampler argument.");
+        return DefaultTraceSamplerArg;
+    }
+
+    private static void LogSafeWarning(string message)
+    {
+        Log.Warning(message);
+        Console.WriteLine($"Warning: {message}");
+    }
+
+    private static string ResolveServiceVersion()
+    {
+        var configuredVersion = Environment.GetEnvironmentVariable("OTEL_SERVICE_VERSION");
+        if (!string.IsNullOrWhiteSpace(configuredVersion))
+            return configuredVersion;
+
+        try
+        {
+            return Assembly.GetEntryAssembly()?.GetName().Version?.ToString()
+                   ?? typeof(ObservabilityExtensions).Assembly.GetName().Version?.ToString()
+                   ?? "unknown";
+        }
+        catch
+        {
+            return "unknown";
+        }
+    }
+
+    private static IEnumerable<KeyValuePair<string, object>> GetKubernetesResourceAttributes()
+    {
+        if (GetEnvironmentValue("K8S_POD_NAME") is { } podName)
+            yield return new KeyValuePair<string, object>("k8s.pod.name", podName);
+
+        if (GetEnvironmentValue("K8S_NAMESPACE") is { } namespaceName)
+            yield return new KeyValuePair<string, object>("k8s.namespace.name", namespaceName);
+
+        if (GetEnvironmentValue("K8S_NODE_NAME") is { } nodeName)
+            yield return new KeyValuePair<string, object>("k8s.node.name", nodeName);
+    }
+
+    private static string? GetEnvironmentValue(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static void ConfigureOtlpExporter(
