@@ -2582,11 +2582,11 @@
         },
         {
             "key": "adminCpf",
-            "value": "39053344705"
+            "value": "12345678909"
         },
         {
             "key": "adminSenha",
-            "value": "Senha@123"
+            "value": "SenhaTeste!123"
         },
         {
             "key": "tokenAdmin",

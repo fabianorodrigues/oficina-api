@@ -52,7 +52,7 @@ public class AdminInicialBootstrapperTests
     [Fact]
     public async Task GarantirAdminInicial_QuandoCpfJaExiste_NaoDeveRecriarNemSobrescreverSenha()
     {
-        var existente = new Funcionario("Admin Existente", "39053344705", "hash-antigo", PerfilUsuarioInterno.Admin);
+        var existente = new Funcionario("Admin Existente", "12345678909", "hash-antigo", PerfilUsuarioInterno.Admin);
         var repo = new FuncionarioRepositoryFake { Existente = existente };
         var passwordHash = new PasswordHashServiceFake();
         var provider = CriarProvider(repo, passwordHash, ConfigAdminHabilitado());
@@ -76,7 +76,7 @@ public class AdminInicialBootstrapperTests
 
         var admin = Assert.Single(repo.Adicionados);
         Assert.Equal("Admin Inicial", admin.Nome);
-        Assert.Equal("39053344705", admin.Cpf);
+        Assert.Equal("12345678909", admin.Cpf);
         Assert.Equal("hash-seguro", admin.SenhaHash);
         Assert.Equal(PerfilUsuarioInterno.Admin, admin.Perfil);
         Assert.Equal(1, repo.SaveCount);
@@ -86,7 +86,7 @@ public class AdminInicialBootstrapperTests
     [Fact]
     public async Task GarantirAdminInicial_QuandoDuplicidadeConcorrenteConfirmada_DeveTratarComoAdminExistente()
     {
-        var existente = new Funcionario("Admin Existente", "39053344705", "hash-antigo", PerfilUsuarioInterno.Admin);
+        var existente = new Funcionario("Admin Existente", "12345678909", "hash-antigo", PerfilUsuarioInterno.Admin);
         var repo = new FuncionarioRepositoryFake
         {
             SalvarException = new DbUpdateException(
@@ -121,8 +121,8 @@ public class AdminInicialBootstrapperTests
         {
             ["AdminInicial:Enabled"] = "true",
             ["AdminInicial:Nome"] = "Admin Inicial",
-            ["AdminInicial:Cpf"] = "39053344705",
-            ["AdminInicial:Senha"] = "Senha@123"
+            ["AdminInicial:Cpf"] = "12345678909",
+            ["AdminInicial:Senha"] = "SenhaTeste!123"
         };
 
     private static ServiceProvider CriarProvider(

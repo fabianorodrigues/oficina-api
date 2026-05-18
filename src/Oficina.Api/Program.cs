@@ -88,7 +88,7 @@ builder.Services.AddScoped<IPasswordHashService, PasswordHashService>();
 builder.Services.AddScoped<IUsuarioAtual, UsuarioAtual>();
 builder.Services.AddSingleton<IAdminInicialBootstrapper, AdminInicialBootstrapperAdapter>();
 builder.Services.Configure<AdminInicialBootstrapOptions>(
-    builder.Configuration.GetSection("AdminInicialBootstrap"));
+    builder.Configuration.GetSection("AdminInicial"));
 builder.Services.AddHostedService<AdminInicialBackgroundService>();
 
 var jwtKey = builder.Configuration["Jwt:Secret"]
