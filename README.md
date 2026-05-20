@@ -3,7 +3,6 @@
 API REST principal da solução Oficina — gestão de clientes, veículos, peças, estoque, serviços, orçamentos e ordens de serviço.
 
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)]()
-[![ASP.NET Core](https://img.shields.io/badge/ASP.NET%20Core-10-512BD4?logo=dotnet&logoColor=white)]()
 [![AWS](https://img.shields.io/badge/AWS-EKS%20%7C%20ECR%20%7C%20RDS-FF9900?logo=amazon-aws&logoColor=white)]()
 [![Docker](https://img.shields.io/badge/Docker-multi--stage-2496ED?logo=docker&logoColor=white)]()
 [![CI](https://github.com/fabianorodrigues/oficina-api/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianorodrigues/oficina-api/actions/workflows/ci.yml)
@@ -11,40 +10,41 @@ API REST principal da solução Oficina — gestão de clientes, veículos, peç
 
 ## Sumário
 
-- 🎯 [Visão geral](#visão-geral)
-- 🧩 [Solução integrada](#solução-integrada)
-- 🏗️ [Arquitetura](#arquitetura)
-- 🔄 [Consumido e gerado](#consumido-e-gerado)
-- 🧭 [Rotas expostas](#rotas-expostas)
-- ⚙️ [Configuração](#configuração)
-- ▶️ [Execução](#execução)
-- ✅ [Validação](#validação)
+- [Visão geral](#visão-geral)
+- [Solução integrada](#solução-integrada)
+- [Arquitetura](#arquitetura)
+- [Consumido e gerado](#consumido-e-gerado)
+- [Rotas expostas](#rotas-expostas)
+- [Configuração](#configuração)
+- [Execução](#execução)
+- [Validação](#validação)
   - [Swagger e Postman](#swagger-e-postman)
-- 💻 [Execução local](#execução-local)
-- 📊 [Observabilidade](#observabilidade)
-- ➡️ [Próxima etapa](#próxima-etapa)
+- [Execução local](#execução-local)
+- [Observabilidade](#observabilidade)
+- [Próxima etapa](#próxima-etapa)
 
 ---
 
-## <a id="visão-geral"></a> 🎯 Visão geral
+## <a id="visão-geral"></a> Visão geral
 
-**Passo 3 (e passo 6 opcional)** da solução Oficina. Aplicação .NET 10 que constrói a imagem Docker, publica no Amazon ECR, executa as *migrations* no RDS e implanta no Amazon EKS.
+Este repositório corresponde à etapa 3 da solução Oficina. A etapa 6 é um redeploy opcional quando a `public-base-url` precisa refletir nos e-mails. A aplicação .NET 10 constrói a imagem Docker, publica no Amazon ECR, executa as *migrations* no RDS e implanta no Amazon EKS.
 
 - Imagem ECR taggeada com `commit-sha` e `latest`, ambas apontando para o mesmo *digest* (idempotente).
 - *Job* Kubernetes aplica as *migrations* no RDS antes do *Deployment* da API.
 - `Service` do tipo `NodePort` (modo `terraform_nlb`) ou `LoadBalancer` interno (modo `aws_lbc`).
-- *HPA* por uso de CPU, baseado no Metrics Server instalado pelo passo 2 do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s).
+- *HPA* por uso de CPU, baseado no Metrics Server instalado na etapa 2 do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s).
 - Em `aws_lbc`, o workflow grava o Listener ARN do NLB no SSM Parameter Store após o `Service` subir.
 
 **Tecnologias:** .NET 10, ASP.NET Core, Entity Framework Core, SQL Server, Docker, Kubernetes (EKS), AWS ECR/SSM, OpenTelemetry, Serilog, Swagger/OpenAPI, Postman, GitHub Actions.
 
 ---
 
-## <a id="solução-integrada"></a> 🧩 Solução integrada
+## <a id="solução-integrada"></a> Solução integrada
 
 A solução Oficina é composta por 4 repositórios que formam, em conjunto, um sistema de gestão de oficina mecânica na AWS. O diagrama abaixo mostra o **fluxo de runtime** (setas sólidas) e o **fluxo de configuração** entre componentes (setas tracejadas).
 
 ```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 45}} }%%
 flowchart LR
     classDef db    fill:#5B9BD5,color:#fff,stroke:#1F4E79
     classDef k8s   fill:#FF9900,color:#fff,stroke:#B36B00
@@ -53,29 +53,29 @@ flowchart LR
     classDef store fill:#3F8624,color:#fff,stroke:#2A5C18
     classDef ext   fill:#EFEFEF,color:#333,stroke:#999
 
-    USER([Cliente HTTPS<br/>navegador / mobile / Postman]):::ext
+    USER([Cliente HTTPS]):::ext
+    APIGW[/HTTP API Gateway/]:::k8s
+    VL[VPC Link]:::k8s
+    NLB[NLB interno]:::k8s
+    API["oficina-api<br/>.NET 10 · EKS"]:::api
+    RDS[("RDS SQL Server")]:::db
+    SSM[("SSM Parameter Store")]:::store
 
-    subgraph PUB[Entrada pública - oficina-infra-k8s api-gateway]
+    subgraph LMB["oficina-auth-lambda"]
       direction TB
-      APIGW[/HTTP API Gateway/]:::k8s
-      AUTHZ[JWT Authorizer<br/>jwt-authorizer Lambda]:::lmb
+      AUTH["auth-cpf<br/>emite JWT"]:::lmb
+      AUTHZ["jwt-authorizer<br/>valida JWT"]:::lmb
     end
 
-    AUTH[auth-cpf Lambda<br/>oficina-auth-lambda]:::lmb
-    NLB[NLB + VPC Link<br/>oficina-infra-k8s core]:::k8s
-    API[oficina-api<br/>.NET 10 em EKS]:::api
-    RDS[(RDS SQL Server<br/>oficina-infra-db)]:::db
-    SSM[(SSM Parameter Store<br/>backend-listener-arn<br/>public-base-url)]:::store
-
-    USER -->|HTTPS| APIGW
-    APIGW -->|POST /api/auth/cpf| AUTH
-    APIGW -->|ANY /api/proxy+| AUTHZ
-    AUTHZ -. autoriza .-> APIGW
-    APIGW -->|/health, /api/proxy+| NLB
-    NLB --> API
-    AUTH -->|consulta clientes/funcionarios| RDS
-    API -->|EF Core| RDS
-    API -. publica/lê .-> SSM
+    USER -- HTTPS --> APIGW
+    APIGW -- "POST /api/auth/cpf" --> AUTH
+    APIGW -. "ANY /api/#123;proxy+#125;" .-> AUTHZ
+    APIGW -- "GET /health" --> VL
+    AUTHZ -. allow .-> VL
+    AUTH -- consulta --> RDS
+    VL --> NLB --> API
+    API -- "EF Core" --> RDS
+    API -. lê/grava .-> SSM
 ```
 
 | Passo | Repositório | Quando |
@@ -86,13 +86,14 @@ flowchart LR
 | 4 | [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) | sempre |
 | 5 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — api-gateway | sempre |
 | **6** | **[oficina-api](https://github.com/fabianorodrigues/oficina-api) — redeploy** | **opcional — este repositório, se `public-base-url` precisa entrar nos e-mails** |
-| 7 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — observability | opcional, após o passo 5 |
+| 7 | [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — root `observability` | sempre, após a etapa 5 |
 
 ---
 
-## <a id="arquitetura"></a> 🏗️ Arquitetura
+## <a id="arquitetura"></a> Arquitetura
 
 ```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 45}} }%%
 flowchart LR
     classDef api   fill:#512BD4,color:#fff,stroke:#3A1FA0
     classDef k8s   fill:#FF9900,color:#fff,stroke:#B36B00
@@ -100,40 +101,41 @@ flowchart LR
     classDef gh    fill:#24292F,color:#fff,stroke:#0D1117
     classDef store fill:#3F8624,color:#fff,stroke:#2A5C18
 
-    subgraph GH[GitHub Actions]
-      direction LR
-      BUILD[Build .NET 10]:::gh --> TEST[xUnit]:::gh --> PUSH[docker push :sha + :latest]:::gh
+    subgraph GH["GitHub Actions"]
+      direction TB
+      BUILD[Build .NET 10]:::gh
+      TEST[xUnit]:::gh
+      PUSH["docker push<br/>:sha + :latest"]:::gh
     end
 
     ECR[(ECR oficina-api)]:::k8s
-    RDS[(RDS SQL Server)]:::db
-    SSM[(SSM<br/>backend-listener-arn<br/>public-base-url)]:::store
 
-    subgraph K8S[EKS - namespace oficina]
+    subgraph K8S["EKS · namespace oficina"]
       direction TB
-      CFG[ConfigMap + Secret<br/>JWT, SMTP, DB, OTEL]:::k8s
-      MIG[Job migration<br/>APP_MODE=migration]:::api
+      CFG["ConfigMap + Secret<br/>JWT · SMTP · DB · OTEL"]:::k8s
+      MIG["Job migration<br/>APP_MODE=migration"]:::api
       DEP[Deployment oficina-api]:::api
-      HPA[HPA 1-2 / 70 porcento CPU]:::k8s
-      SVC[Service<br/>NodePort ou LB interno]:::k8s
+      HPA["HPA 1-2 · 70% CPU"]:::k8s
+      SVC["Service<br/>NodePort ou LB interno"]:::k8s
     end
 
-    PUSH --> ECR
-    ECR --> MIG
-    ECR --> DEP
+    RDS[(RDS SQL Server)]:::db
+    SSM[("SSM<br/>listener-arn<br/>public-base-url")]:::store
+
+    BUILD --> TEST --> PUSH --> ECR
+    ECR --> MIG --> DEP --> SVC
     CFG --> MIG
     CFG --> DEP
-    MIG --> RDS
+    MIG -- aplica schema --> RDS
     DEP --> RDS
     HPA -. escala .-> DEP
-    DEP --> SVC
-    SVC -. aws_lbc grava listener .-> SSM
-    DEP -. lê public-base-url .-> SSM
+    SVC -. aws_lbc grava .-> SSM
+    DEP -. lê URL .-> SSM
 ```
 
 ---
 
-## <a id="consumido-e-gerado"></a> 🔄 Consumido e gerado
+## <a id="consumido-e-gerado"></a> Consumido e gerado
 
 **Consome:**
 
@@ -148,21 +150,34 @@ flowchart LR
 
 | Saída | Consumido por |
 | --- | --- |
-| Imagem ECR (`<commit-sha>` + `latest`) | EKS (passo 3/6) |
+| Imagem ECR (`<commit-sha>` + `latest`) | EKS (etapas 3/6) |
 | Recursos K8s no namespace `oficina` (`Deployment`, `Service`, `HPA`, `ConfigMap`, `Secret`) | execução em runtime |
-| SSM `/<projeto>/<ambiente>/api/backend-listener-arn` (apenas em `aws_lbc`) | api-gateway (passo 5) |
+| SSM `/<projeto>/<ambiente>/api/backend-listener-arn` (apenas em `aws_lbc`) | api-gateway (etapa 5) |
 
 ---
 
-## <a id="rotas-expostas"></a> 🧭 Rotas expostas
+## <a id="rotas-expostas"></a> Rotas expostas
 
-Rotas REST agrupadas por perfil. Todas as rotas `/api/*` (exceto `/api/auth` e `/api/orcamentos/acoes-externas/*`) são protegidas pelo JWT Authorizer do API Gateway (passo 5).
+Rotas REST agrupadas por perfil. No API Gateway, a entrada pública expõe apenas `/health`, `POST /api/auth/cpf` e o proxy protegido `ANY /api/{proxy+}`.
+
+### Via API Gateway
+
+| Rota | Verbo | Perfil exigido | Observação |
+| --- | --- | --- | --- |
+| `/health` | GET | público | Health check externo |
+| `/api/auth/cpf` | POST | público | Roteada diretamente para a Lambda `oficina-auth-cpf` |
+| `/api/{proxy+}` | ANY | JWT válido | Encaminha as rotas da API para o backend no EKS |
+
+### Internas ou locais
+
+| Rota | Verbo | Acesso | Observação |
+| --- | --- | --- | --- |
+| `/ready` | GET | `kubectl port-forward` ou execução local | Readiness da aplicação e do banco; não é publicada pelo API Gateway |
+
+### Controllers da API
 
 | Rota base | Verbo principal | Perfil exigido |
 | --- | --- | --- |
-| `/health`, `/ready` | GET | público |
-| `/api/auth` | POST | público |
-| `/api/orcamentos/acoes-externas/...` | GET, POST | público (links assinados de e-mail) |
 | `/api/clientes`, `/api/veiculos`, `/api/servicos`, `/api/pecas`, `/api/insumos`, `/api/estoque` | GET, POST, PUT, DELETE | Funcionário ou Admin |
 | `/api/ordens-servico`, `/api/orcamentos` | GET, POST, PUT, DELETE | Funcionário ou Admin |
 | `/api/relatorios` | GET | Funcionário ou Admin |
@@ -170,13 +185,16 @@ Rotas REST agrupadas por perfil. Todas as rotas `/api/*` (exceto `/api/auth` e `
 | `/api/admin/funcionarios` | GET, POST, PUT, DELETE | Admin |
 
 > [!NOTE]
-> A rota `POST /api/auth/cpf` no API Gateway é roteada **diretamente para a Lambda `oficina-auth-cpf`** (passo 4), e não para esta API. O `AuthController` desta API atende ao mesmo contrato em execução local — útil para desenvolvimento sem precisar de Lambda implantada.
+> A rota `POST /api/auth/cpf` no API Gateway é roteada **diretamente para a Lambda `oficina-auth-cpf`** (etapa 4), e não para esta API. O `AuthController` desta API atende ao mesmo contrato em execução local — útil para desenvolvimento sem precisar de Lambda implantada.
+
+> [!WARNING]
+> O controller `/api/orcamentos/acoes-externas/*` é anônimo na aplicação para links assinados de e-mail. No ambiente publicado, essas rotas ainda passam pelo `ANY /api/{proxy+}` e ficam protegidas pelo JWT Authorizer do API Gateway; a liberação pública dedicada é uma evolução futura.
 
 A solução implementa 14 controllers na pasta [src/Oficina.Api/Controllers/](src/Oficina.Api/Controllers/), com quatro *policies* definidas em `Security/Policies.cs` (`ClienteOnly`, `FuncionarioOuAdmin`, `AdminOnly`, `ClienteOuAdmin`). A `FallbackPolicy` exige autenticação em qualquer endpoint não marcado com `[AllowAnonymous]`.
 
 ---
 
-## <a id="configuração"></a> ⚙️ Configuração
+## <a id="configuração"></a> Configuração
 
 Configure em **GitHub > Settings > Secrets and variables > Actions**.
 
@@ -191,7 +209,7 @@ Configure em **GitHub > Settings > Secrets and variables > Actions**.
 | Nome | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | Secret | sim | Credenciais AWS |
-| `AWS_SESSION_TOKEN` | Secret | não | Credenciais temporárias (STS) |
+| `AWS_SESSION_TOKEN` | Secret | não | Credenciais temporárias (STS, opcional) |
 | `ECR_REPOSITORY_URL` | Secret | sim | URL completa do ECR (`oficina-infra-k8s` core) |
 | `EKS_CLUSTER_NAME` | Secret | sim | Nome do cluster EKS |
 | `DB_CONNECTION_STRING` | Secret | sim | *Connection string* do SQL Server |
@@ -221,7 +239,7 @@ Utilizado apenas quando o *input* do workflow `enable_initial_admin=true`. Os se
 | --- | --- | --- |
 | `ADMIN_INICIAL_NOME`, `ADMIN_INICIAL_CPF`, `ADMIN_INICIAL_SENHA` | Secret | Credenciais do administrador inicial |
 
-### <a id="opentelemetry-opcional"></a> OpenTelemetry (opcional)
+### <a id="opentelemetry"></a> OpenTelemetry / OTLP
 
 | Nome | Tipo | Default | Descrição |
 | --- | --- | --- | --- |
@@ -261,7 +279,7 @@ O valor retornado é a URL completa esperada pelo secret `ECR_REPOSITORY_URL`.
 
 ---
 
-## <a id="execução"></a> ▶️ Execução
+## <a id="execução"></a> Execução
 
 Dispare manualmente:
 
@@ -280,7 +298,7 @@ O pipeline completo: `validate` → `build-and-test` → `publish-image` (idempo
 
 ---
 
-## <a id="validação"></a> ✅ Validação
+## <a id="validação"></a> Validação
 
 ### Console
 
@@ -333,7 +351,7 @@ Variáveis obrigatórias do *environment*:
 Como obter o `baseUrl`:
 
 ```powershell
-# Após o passo 5 (API Gateway):
+# Após a etapa 5 (API Gateway):
 aws ssm get-parameter --name "/$($env:PROJECT_NAME)/$($env:ENVIRONMENT)/api/public-base-url" --region $env:AWS_REGION --query "Parameter.Value" --output text
 
 # Via port-forward em ambiente AWS: http://127.0.0.1:18080
@@ -342,7 +360,7 @@ aws ssm get-parameter --name "/$($env:PROJECT_NAME)/$($env:ENVIRONMENT)/api/publ
 
 ---
 
-## <a id="execução-local"></a> 💻 Execução local
+## <a id="execução-local"></a> Execução local
 
 **Pré-requisitos:** .NET 10 SDK, Docker e Docker Compose. O arquivo `docker/.env` é local (ignorado pelo Git); use o exemplo como ponto de partida.
 
@@ -405,14 +423,14 @@ Invoke-RestMethod http://localhost:8080/ready
 
 ---
 
-## <a id="observabilidade"></a> 📊 Observabilidade
+## <a id="observabilidade"></a> Observabilidade
 
-A API usa OpenTelemetry/OTLP como contrato independente de fornecedor. Emite logs JSON estruturados via Serilog em `stdout`, propaga `X-Correlation-Id` por requisição via `CorrelationIdMiddleware` e exporta traces e métricas por OTLP quando `OTEL_EXPORTER_OTLP_ENDPOINT` estiver configurado.
+A API participa da observabilidade da solução usando OpenTelemetry/OTLP como contrato independente de fornecedor. Emite logs JSON estruturados via Serilog em `stdout`, propaga `X-Correlation-Id` por requisição via `CorrelationIdMiddleware` e exporta traces e métricas por OTLP quando `OTEL_EXPORTER_OTLP_ENDPOINT` estiver configurado.
 
 > [!TIP]
-> As variáveis OTLP estão na [seção Configuração — OpenTelemetry](#opentelemetry-opcional). Sem `OTEL_EXPORTER_OTLP_ENDPOINT` (ou com *endpoint* inválido), o pod sobe sem exportador externo; os logs continuam disponíveis via `kubectl logs`.
+> As variáveis OTLP estão na [seção Configuração — OpenTelemetry / OTLP](#opentelemetry). Sem `OTEL_EXPORTER_OTLP_ENDPOINT` (ou com *endpoint* inválido), o pod sobe sem exportador externo; os logs continuam disponíveis via `kubectl logs`.
 
-Para dashboards, alertas e Synthetic Monitor no New Relic, aplique o root `terraform/observability` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — **passo 7** — após o passo 5 com `/health` respondendo.
+Para dashboards, alertas e Synthetic Monitor no New Relic, aplique o root `terraform/observability` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — **etapa 7** — após a etapa 5 com `/health` respondendo.
 
 ### Validar
 
@@ -429,9 +447,9 @@ No *backend* OTLP configurado, gere tráfego em `/health` e `/api/*` e filtre po
 
 ---
 
-## <a id="próxima-etapa"></a> ➡️ Próxima etapa
+## <a id="próxima-etapa"></a> Próxima etapa
 
-Publicar [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) — **passo 4**. Em seguida, aplicar o root `terraform/api-gateway` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — **passo 5**. O **passo 6** (redeploy desta API) só é necessário se os e-mails precisarem refletir a `public-base-url` recém-criada.
+Publicar [oficina-auth-lambda](https://github.com/fabianorodrigues/oficina-auth-lambda) — **etapa 4**. Em seguida, aplicar o root `terraform/api-gateway` do [oficina-infra-k8s](https://github.com/fabianorodrigues/oficina-infra-k8s) — **etapa 5**. A **etapa 6** (redeploy desta API) é opcional e só é necessária se os e-mails precisarem refletir a `public-base-url` recém-criada.
 
 > [!TIP]
-> **Checkpoint antes de seguir:** pod respondendo `200` em `/ready`, imagem no ECR com a *tag* do `commit SHA` e a *tag* `latest` apontando para o **mesmo digest**, e (em `aws_lbc`) SSM `/<projeto>/<ambiente>/api/backend-listener-arn` gravado.
+> **Checkpoint antes de seguir:** pod respondendo `200` em `/ready` via `kubectl port-forward` ou execução local, imagem no ECR com a *tag* do `commit SHA` e a *tag* `latest` apontando para o **mesmo digest**, e (em `aws_lbc`) SSM `/<projeto>/<ambiente>/api/backend-listener-arn` gravado.
